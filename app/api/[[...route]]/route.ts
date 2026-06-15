@@ -115,8 +115,8 @@ app.post('/auth/login', async (c) => {
 })
 
 // Helper to retrieve and automatically refresh SmarterMail access token from cookies
-async function getValidAccessToken(c: Context): Promise<{ accessToken: string; serverUrl: string } | null> {
-  const accessToken = getCookie(c, 'sm_access_token')
+async function getValidAccessToken(c: Context, forceRefresh = false): Promise<{ accessToken: string; serverUrl: string } | null> {
+  const accessToken = forceRefresh ? null : getCookie(c, 'sm_access_token')
   const refreshToken = getCookie(c, 'sm_refresh_token')
   const serverUrl = getCookie(c, 'sm_server_url')
 
@@ -145,48 +145,69 @@ async function getValidAccessToken(c: Context): Promise<{ accessToken: string; s
   return null
 }
 
+// Wrapper helper to execute SmarterMail requests and automatically retry on 401
+async function callSmarterMail<T>(
+  c: Context,
+  operation: (client: SmarterMailClient, accessToken: string) => Promise<T>
+): Promise<T> {
+  let authContext = await getValidAccessToken(c)
+  if (!authContext) {
+    throw new HTTPException(401, { message: 'Not authenticated' })
+  }
+
+  let client = new SmarterMailClient(authContext.serverUrl)
+  try {
+    return await operation(client, authContext.accessToken)
+  } catch (err) {
+    const is401 = err instanceof Error && err.message.includes('401')
+    if (is401) {
+      console.log('[SmarterMail Client] Detected 401 error. Attempting token refresh and retry...')
+      authContext = await getValidAccessToken(c, true)
+      if (authContext) {
+        client = new SmarterMailClient(authContext.serverUrl)
+        return await operation(client, authContext.accessToken)
+      }
+    }
+    throw err
+  }
+}
+
 // GET /api/auth/me
 app.get('/auth/me', async (c) => {
-  const authContext = await getValidAccessToken(c)
-  if (!authContext) {
+  try {
+    const result = await callSmarterMail(c, async (client, accessToken) => {
+      const userSettings = await client.getUserSettings(accessToken)
+      const userData = userSettings?.userData
+      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
+        throw new HTTPException(401, { message: 'Not authenticated' })
+      }
+      return { userData, serverUrl: getCookie(c, 'sm_server_url')! }
+    })
+
+    const { userData, serverUrl } = result
+    const emailAddress = userData.emailAddress!
+    const username = userData.userName || emailAddress.split('@')[0]
+
+    // Check if Telegram is bound in DB
+    const userCheck = await db.execute({
+      sql: 'SELECT telegramUserId FROM users WHERE email = ? LIMIT 1',
+      args: [emailAddress]
+    })
+    const dbUser = userCheck.rows[0]
+
+    return apiSuccess(c, {
+      username,
+      emailAddress,
+      serverUrl,
+      isTelegramBound: !!(dbUser && dbUser.telegramUserId),
+    }, 'Current user retrieved successfully')
+  } catch (err) {
+    console.error('getUserSettings in me failed:', err)
     deleteCookie(c, 'sm_access_token', { path: '/' })
     deleteCookie(c, 'sm_refresh_token', { path: '/' })
     deleteCookie(c, 'sm_server_url', { path: '/' })
     return apiError(c, 'Not authenticated', 401)
   }
-
-  const { accessToken, serverUrl } = authContext
-  const client = new SmarterMailClient(serverUrl)
-
-  try {
-    const userSettings = await client.getUserSettings(accessToken)
-    const userData = userSettings?.userData
-    if (userSettings && userSettings.success !== false && userData?.emailAddress) {
-      const emailAddress = userData.emailAddress
-      const username = userData.userName || emailAddress.split('@')[0]
-
-      // Check if Telegram is bound in DB
-      const userCheck = await db.execute({
-        sql: 'SELECT telegramUserId FROM users WHERE email = ? LIMIT 1',
-        args: [emailAddress]
-      })
-      const dbUser = userCheck.rows[0]
-
-      return apiSuccess(c, {
-        username,
-        emailAddress,
-        serverUrl,
-        isTelegramBound: !!(dbUser && dbUser.telegramUserId),
-      }, 'Current user retrieved successfully')
-    }
-  } catch (err) {
-    console.error('getUserSettings in me failed:', err)
-  }
-
-  deleteCookie(c, 'sm_access_token', { path: '/' })
-  deleteCookie(c, 'sm_refresh_token', { path: '/' })
-  deleteCookie(c, 'sm_server_url', { path: '/' })
-  return apiError(c, 'Not authenticated', 401)
 })
 
 // POST /api/auth/logout
@@ -199,29 +220,23 @@ app.post('/auth/logout', (c) => {
 
 // POST /api/auth/telegram/bind-token
 app.post('/auth/telegram/bind-token', async (c) => {
-  const authContext = await getValidAccessToken(c)
-  if (!authContext) {
-    return apiError(c, 'Not authenticated', 401)
-  }
-
-  const { accessToken, serverUrl } = authContext
-
   try {
     const { password } = await c.req.json()
     if (!password) {
       return apiError(c, 'Password is required to confirm and link your Telegram account', 400)
     }
 
+    const { email, serverUrl } = await callSmarterMail(c, async (client, accessToken) => {
+      const userSettings = await client.getUserSettings(accessToken)
+      const userData = userSettings?.userData
+      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
+        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
+      }
+      return { email: userData.emailAddress, serverUrl: getCookie(c, 'sm_server_url')! }
+    })
+
     const client = new SmarterMailClient(serverUrl)
     
-    // 1. Fetch current email
-    const userSettings = await client.getUserSettings(accessToken)
-    const userData = userSettings?.userData
-    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-      return apiError(c, 'Failed to fetch user email context', 401)
-    }
-    const email = userData.emailAddress
-
     // 2. Validate password against SmarterMail
     const verifyAuth = await client.authenticateUser(email, password)
     if (!verifyAuth.success) {
@@ -252,6 +267,9 @@ app.post('/auth/telegram/bind-token', async (c) => {
     return apiSuccess(c, { token, bindUrl }, 'Binding link generated successfully')
   } catch (error) {
     console.error('Bind token error:', error)
+    if (error instanceof HTTPException) {
+      return apiError(c, error.message, error.status)
+    }
     const errorMessage = error instanceof Error ? error.message : 'An error occurred while generating bind token'
     return apiError(c, errorMessage, 500)
   }
@@ -259,13 +277,6 @@ app.post('/auth/telegram/bind-token', async (c) => {
 
 // POST /api/upload
 app.post('/upload', async (c) => {
-  const authContext = await getValidAccessToken(c)
-  if (!authContext) {
-    return apiError(c, 'Not authenticated', 401)
-  }
-
-  const { accessToken, serverUrl } = authContext
-
   try {
     const body = await c.req.parseBody()
     const file = body.file
@@ -277,33 +288,40 @@ app.post('/upload', async (c) => {
     const fileBuffer = Buffer.from(await file.arrayBuffer())
     const fileName = file.name || `web_upload_${Date.now()}`
 
-    const client = new SmarterMailClient(serverUrl)
-    const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getUtc8DatePath()
+    const uploadResult = await callSmarterMail(c, async (client, accessToken) => {
+      const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getUtc8DatePath()
 
-    // Fetch email address of the current user to tag database records
-    const userSettings = await client.getUserSettings(accessToken)
-    const userData = userSettings?.userData
-    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-      return apiError(c, 'Failed to fetch user email context', 401)
-    }
-    const email = userData.emailAddress
+      // Fetch email address of the current user to tag database records
+      const userSettings = await client.getUserSettings(accessToken)
+      const userData = userSettings?.userData
+      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
+        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
+      }
+      const email = userData.emailAddress
 
-    // 1. Upload to SmarterMail storage
-    const uploadResult = await client.uploadFile(accessToken, fileBuffer, fileName, folderPath)
-    if (!uploadResult.success || !uploadResult.uploadData) {
-      return apiError(c, uploadResult.message || 'SmarterMail upload failed', 500)
-    }
+      // 1. Upload to SmarterMail storage
+      const uploadRes = await client.uploadFile(accessToken, fileBuffer, fileName, folderPath)
+      if (!uploadRes.success || !uploadRes.uploadData) {
+        throw new Error(uploadRes.message || 'SmarterMail upload failed')
+      }
 
-    const fileMeta = uploadResult.uploadData[fileName]
-    if (!fileMeta || !fileMeta.id) {
-      return apiError(c, 'Uploaded file metadata missing', 500)
-    }
+      const fileMeta = uploadRes.uploadData[fileName]
+      if (!fileMeta || !fileMeta.id) {
+        throw new Error('Uploaded file metadata missing')
+      }
 
-    // 2. Generate public share link
-    const linkResult = await client.generatePublicLink(accessToken, fileMeta.id)
-    if (!linkResult.success || !linkResult.publicLink) {
-      return apiError(c, linkResult.message || 'Failed to generate public share link', 500)
-    }
+      // 2. Generate public share link
+      const linkResult = await client.generatePublicLink(accessToken, fileMeta.id)
+      if (!linkResult.success || !linkResult.publicLink) {
+        throw new Error(linkResult.message || 'Failed to generate public share link')
+      }
+
+      return {
+        email,
+        fileId: fileMeta.id,
+        publicLink: linkResult.publicLink
+      }
+    })
 
     // 3. Save uploaded image metadata to database
     const imageId = nodeCrypto.randomUUID()
@@ -312,10 +330,10 @@ app.post('/upload', async (c) => {
             VALUES (?, ?, ?, ?, ?, ?, ?)`,
       args: [
         imageId,
-        email,
-        fileMeta.id,
+        uploadResult.email,
+        uploadResult.fileId,
         fileName,
-        linkResult.publicLink,
+        uploadResult.publicLink,
         file.size,
         'web'
       ]
@@ -324,11 +342,14 @@ app.post('/upload', async (c) => {
     return apiSuccess(c, {
       id: imageId,
       fileName,
-      publicLink: linkResult.publicLink,
+      publicLink: uploadResult.publicLink,
       size: file.size,
     }, 'File uploaded successfully')
   } catch (error) {
     console.error('Web upload endpoint error:', error)
+    if (error instanceof HTTPException) {
+      return apiError(c, error.message, error.status)
+    }
     const errorMessage = error instanceof Error ? error.message : 'An error occurred during file upload'
     return apiError(c, errorMessage, 500)
   }
@@ -336,31 +357,27 @@ app.post('/upload', async (c) => {
 
 // GET /api/images
 app.get('/images', async (c) => {
-  const authContext = await getValidAccessToken(c)
-  if (!authContext) {
-    return apiError(c, 'Not authenticated', 401)
-  }
-
-  const { accessToken, serverUrl } = authContext
-  const client = new SmarterMailClient(serverUrl)
-
   try {
-    const userSettings = await client.getUserSettings(accessToken)
-    const userData = userSettings?.userData
-    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-      return apiError(c, 'Failed to fetch user email context', 401)
-    }
-    const email = userData.emailAddress
+    const email = await callSmarterMail(c, async (client, accessToken) => {
+      const userSettings = await client.getUserSettings(accessToken)
+      const userData = userSettings?.userData
+      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
+        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
+      }
+      return userData.emailAddress
+    })
 
     const result = await db.execute({
       sql: 'SELECT * FROM uploaded_images WHERE email = ? ORDER BY createdAt DESC',
       args: [email]
     })
 
-    // Map rows to a cleaner format if necessary, or return directly
     return apiSuccess(c, result.rows, 'Uploaded images retrieved successfully')
   } catch (error) {
     console.error('Fetch images error:', error)
+    if (error instanceof HTTPException) {
+      return apiError(c, error.message, error.status)
+    }
     const errorMessage = error instanceof Error ? error.message : 'An error occurred while fetching images'
     return apiError(c, errorMessage, 500)
   }
@@ -368,26 +385,20 @@ app.get('/images', async (c) => {
 
 // DELETE /api/images/:id
 app.delete('/images/:id', async (c) => {
-  const authContext = await getValidAccessToken(c)
-  if (!authContext) {
-    return apiError(c, 'Not authenticated', 401)
-  }
-
-  const { accessToken, serverUrl } = authContext
-  const client = new SmarterMailClient(serverUrl)
-
   try {
     const id = c.req.param('id')
     if (!id) {
       return apiError(c, 'Image ID is required', 400)
     }
 
-    const userSettings = await client.getUserSettings(accessToken)
-    const userData = userSettings?.userData
-    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-      return apiError(c, 'Failed to fetch user email context', 401)
-    }
-    const email = userData.emailAddress
+    const email = await callSmarterMail(c, async (client, accessToken) => {
+      const userSettings = await client.getUserSettings(accessToken)
+      const userData = userSettings?.userData
+      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
+        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
+      }
+      return userData.emailAddress
+    })
 
     // Check if the image belongs to this user
     const checkRes = await db.execute({
@@ -408,6 +419,9 @@ app.delete('/images/:id', async (c) => {
     return apiSuccess(c, { id }, 'Image deleted successfully')
   } catch (error) {
     console.error('Delete image error:', error)
+    if (error instanceof HTTPException) {
+      return apiError(c, error.message, error.status)
+    }
     const errorMessage = error instanceof Error ? error.message : 'An error occurred while deleting image'
     return apiError(c, errorMessage, 500)
   }
@@ -415,104 +429,102 @@ app.delete('/images/:id', async (c) => {
 
 // POST /api/images/sync
 app.post('/images/sync', async (c) => {
-  const authContext = await getValidAccessToken(c)
-  if (!authContext) {
-    return apiError(c, 'Not authenticated', 401)
-  }
-
-  const { accessToken, serverUrl } = authContext
-  const client = new SmarterMailClient(serverUrl)
-
   try {
-    const userSettings = await client.getUserSettings(accessToken)
-    const userData = userSettings?.userData
-    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-      return apiError(c, 'Failed to fetch user email context', 401)
-    }
-    const email = userData.emailAddress
-
-    let syncedCount = 0
-
-    // Recursive folder scanning function
-    const walkFolder = async (folderPath: string) => {
-      const res = await client.getFolder(accessToken, folderPath)
-      if (!res.success || !res.folder) {
-        console.warn(`[Sync] Failed to list folder "${folderPath}":`, res.message)
-        return
+    const syncResult = await callSmarterMail(c, async (client, accessToken) => {
+      const userSettings = await client.getUserSettings(accessToken)
+      const userData = userSettings?.userData
+      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
+        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
       }
+      const email = userData.emailAddress
 
-      // 1. Process files in current folder
-      const files = res.folder.files || []
-      for (const file of files) {
-        // Only sync images
-        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(file.fileName)) {
-          let publicLink = file.publicDownloadLink
+      let syncedCount = 0
 
-          // Generate public link if not already generated/published
-          if (!publicLink) {
-            try {
-              const linkRes = await client.generatePublicLink(accessToken, file.id)
-              if (linkRes.success && linkRes.publicLink) {
-                publicLink = linkRes.publicLink
-              }
-            } catch (linkErr) {
-              console.warn(`[Sync] Failed to generate public link for file "${file.fileName}" (${file.id}):`, linkErr)
-            }
-          }
+      // Recursive folder scanning function
+      const walkFolder = async (folderPath: string) => {
+        const res = await client.getFolder(accessToken, folderPath)
+        if (!res.success || !res.folder) {
+          console.warn(`[Sync] Failed to list folder "${folderPath}":`, res.message)
+          return
+        }
 
-          if (publicLink) {
-            // Check if the image record is already in our DB (either by fileId or publicLink)
-            const checkExist = await db.execute({
-              sql: 'SELECT id FROM uploaded_images WHERE fileId = ? OR publicLink = ? LIMIT 1',
-              args: [file.id, publicLink]
-            })
+        // 1. Process files in current folder
+        const files = res.folder.files || []
+        for (const file of files) {
+          // Only sync images
+          if (/\.(jpg|jpeg|png|gif|webp)$/i.test(file.fileName)) {
+            let publicLink = file.publicDownloadLink
 
-            if (checkExist.rows.length === 0) {
-              const imageId = nodeCrypto.randomUUID()
-              let createdAt = new Date().toISOString()
-              if (file.dateAdded) {
-                try {
-                  createdAt = new Date(file.dateAdded).toISOString()
-                } catch {
-                  // Fallback
+            // Generate public link if not already generated/published
+            if (!publicLink) {
+              try {
+                const linkRes = await client.generatePublicLink(accessToken, file.id)
+                if (linkRes.success && linkRes.publicLink) {
+                  publicLink = linkRes.publicLink
                 }
+              } catch (linkErr) {
+                console.warn(`[Sync] Failed to generate public link for file "${file.fileName}" (${file.id}):`, linkErr)
               }
-
-              await db.execute({
-                sql: `INSERT INTO uploaded_images (id, email, fileId, fileName, publicLink, size, source, createdAt)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                args: [
-                  imageId,
-                  email,
-                  file.id,
-                  file.fileName,
-                  publicLink,
-                  file.size,
-                  'workspace',
-                  createdAt
-                ]
-              })
-              syncedCount++
             }
+
+            if (publicLink) {
+              // Check if the image record is already in our DB (either by fileId or publicLink)
+              const checkExist = await db.execute({
+                sql: 'SELECT id FROM uploaded_images WHERE fileId = ? OR publicLink = ? LIMIT 1',
+                args: [file.id, publicLink]
+              })
+
+              if (checkExist.rows.length === 0) {
+                const imageId = nodeCrypto.randomUUID()
+                let createdAt = new Date().toISOString()
+                if (file.dateAdded) {
+                  try {
+                    createdAt = new Date(file.dateAdded).toISOString()
+                  } catch {
+                    // Fallback
+                  }
+                }
+
+                await db.execute({
+                  sql: `INSERT INTO uploaded_images (id, email, fileId, fileName, publicLink, size, source, createdAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                  args: [
+                    imageId,
+                    email,
+                    file.id,
+                    file.fileName,
+                    publicLink,
+                    file.size,
+                    'workspace',
+                    createdAt
+                  ]
+                })
+                syncedCount++
+              }
+            }
+          }
+        }
+
+        // 2. Recurse into subdirectories
+        const subFolders = res.folder.subFolders || []
+        for (const sub of subFolders) {
+          if (sub.path) {
+            await walkFolder(sub.path)
           }
         }
       }
 
-      // 2. Recurse into subdirectories
-      const subFolders = res.folder.subFolders || []
-      for (const sub of subFolders) {
-        if (sub.path) {
-          await walkFolder(sub.path)
-        }
-      }
-    }
+      // Start scanning from public folder path
+      await walkFolder(SmarterMailClient.getPublicFolder())
+      return { syncedCount }
+    })
 
-    // Start scanning from public folder path
-    await walkFolder(SmarterMailClient.getPublicFolder())
-
-    return apiSuccess(c, { syncedCount }, `Successfully synced ${syncedCount} new workspace images`)
+    return apiSuccess(c, { syncedCount: syncResult.syncedCount }, `Successfully synced ${syncResult.syncedCount} new workspace images`)
   } catch (error) {
     console.error('Workspace sync error:', error)
+    if (error instanceof HTTPException) {
+      return apiError(c, error.message, error.status)
+    }
     const errorMessage = error instanceof Error ? error.message : 'An error occurred during synchronization'
     return apiError(c, errorMessage, 500)
   }

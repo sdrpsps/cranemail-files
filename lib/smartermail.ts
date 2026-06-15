@@ -40,6 +40,7 @@ export interface SmarterMailUploadFileMeta {
 export interface SmarterMailUploadResponse {
   success: boolean
   message?: string
+  uploadResults?: Record<string, string>
   uploadData?: Record<string, SmarterMailUploadFileMeta>
 }
 
@@ -47,6 +48,45 @@ export interface SmarterMailLinkResponse {
   success: boolean
   message?: string
   publicLink?: string
+}
+
+function getMimeType(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'png':
+      return 'image/png'
+    case 'gif':
+      return 'image/gif'
+    case 'webp':
+      return 'image/webp'
+    case 'pdf':
+      return 'application/pdf'
+    case 'txt':
+      return 'text/plain'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+function normalizeFolderPath(folderPath?: string): string {
+  if (!folderPath || folderPath === '/') {
+    return '/'
+  }
+
+  const trimmed = folderPath.trim().replace(/\/+/g, '/').replace(/\/+$/, '')
+  if (!trimmed || trimmed === '/') {
+    return '/'
+  }
+
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+function isFolderAlreadyExistsError(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return normalized.includes('already exists') || normalized.includes('exist')
 }
 
 export class SmarterMailClient {
@@ -171,49 +211,143 @@ export class SmarterMailClient {
   }
 
   /**
-   * Upload a file to file storage.
-   * Supports an optional folderPath. Falls back to root if the folder-based upload fails.
+   * Create a folder in file storage.
+   * Uses the SmarterMail folder-put endpoint.
    */
-  async uploadFile(accessToken: string, fileBuffer: Buffer, fileName: string, folderPath?: string): Promise<SmarterMailUploadResponse> {
-    const makeUploadRequest = async (path?: string): Promise<SmarterMailUploadResponse> => {
-      const formData = new FormData()
-      const blob = new Blob([fileBuffer])
-      formData.append('file', blob, fileName)
+  async createFolder(accessToken: string, folderPath: string): Promise<{ success: boolean; message?: string }> {
+    const normalizedPath = normalizeFolderPath(folderPath)
+    const segments = normalizedPath.split('/').filter(Boolean)
+    const folder = segments.at(-1)
 
-      let url = `${this.serverUrl}/api/v1/filestorage/upload`
-      if (path) {
-        url += `?folderPath=${encodeURIComponent(path)}`
-        formData.append('folderPath', path)
-      }
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`SmarterMail Upload HTTP Error: ${response.status} - ${errorText || response.statusText}`)
-      }
-
-      return response.json() as Promise<SmarterMailUploadResponse>
+    if (!folder) {
+      return { success: true }
     }
 
-    if (folderPath) {
+    const parentFolder = segments.length > 1
+      ? `/${segments.slice(0, -1).join('/')}`
+      : '/'
+
+    return this.post<{ success: boolean; message?: string }>('api/v1/filestorage/folder-put', {
+      folder,
+      parentFolder,
+    }, {
+      'Authorization': `Bearer ${accessToken}`,
+    })
+  }
+
+  /**
+   * Ensure a full folder path exists by creating each segment incrementally.
+   * For example, given '/public/2026/06/15', it will ensure:
+   *   /public  →  /public/2026  →  /public/2026/06  →  /public/2026/06/15
+   */
+  async ensureFolderExists(accessToken: string, folderPath: string): Promise<void> {
+    const normalizedPath = normalizeFolderPath(folderPath)
+    const segments = normalizedPath.split('/').filter(Boolean)
+    let currentPath = ''
+
+    for (const segment of segments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : `/${segment}`
       try {
-        console.log(`[SmarterMail Client] Attempting upload with folderPath: ${folderPath}`)
-        return await makeUploadRequest(folderPath)
+        const response = await this.createFolder(accessToken, currentPath)
+        if (!response.success) {
+          throw new Error(response.message || 'Folder creation failed')
+        }
+        console.log(`[SmarterMail Client] Folder ensured: ${currentPath}`)
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err)
-        console.warn(`[SmarterMail Client] Folder upload failed (${errorMessage}). Falling back to root directory.`)
-        return await makeUploadRequest()
+        if (!isFolderAlreadyExistsError(errorMessage)) {
+          throw err
+        }
+        console.log(`[SmarterMail Client] Folder create note for "${currentPath}": ${errorMessage}`)
       }
     }
+  }
 
-    return makeUploadRequest()
+  async moveFiles(accessToken: string, fileIds: string[], newFolder: string): Promise<{ success: boolean; message?: string }> {
+    return this.post<{ success: boolean; message?: string }>('api/v1/filestorage/move-files', {
+      newFolder: normalizeFolderPath(newFolder),
+      fileIDs: fileIds,
+    }, {
+      'Authorization': `Bearer ${accessToken}`,
+    })
+  }
+
+  /**
+   * SmarterMail's public upload endpoint expects a multipart "folder" field in addition to the
+   * file payload. Some servers return an empty uploadData object even when the upload succeeds,
+   * so we fall back to listing the target folder to recover the uploaded file metadata.
+   */
+  async uploadFile(accessToken: string, fileBuffer: Buffer, fileName: string, folderPath?: string): Promise<SmarterMailUploadResponse> {
+    const targetFolder = normalizeFolderPath(folderPath)
+    const fileType = getMimeType(fileName)
+    const formData = new FormData()
+    const fileObj = new File([new Uint8Array(fileBuffer)], fileName, { type: fileType })
+
+    formData.append('file', fileObj)
+    formData.append('folder', targetFolder === '/' ? '' : targetFolder)
+
+    console.log(`[SmarterMail Client] Upload file: "${fileName}", size: ${fileBuffer.length} bytes, type: ${fileType}, target folder: ${targetFolder}`)
+
+    if (targetFolder !== '/') {
+      await this.ensureFolderExists(accessToken, targetFolder)
+    }
+
+    const response = await fetch(`${this.serverUrl}/api/v1/filestorage/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`SmarterMail Upload HTTP Error: ${response.status} - ${errorText || response.statusText}`)
+    }
+
+    const uploadResponse = await response.json() as SmarterMailUploadResponse
+    if (!uploadResponse.success) {
+      return uploadResponse
+    }
+
+    const fileMeta = uploadResponse.uploadData?.[fileName]
+    if (fileMeta?.id) {
+      return uploadResponse
+    }
+
+    const recoveredFile = await this.findUploadedFile(accessToken, targetFolder, fileName, fileBuffer.length)
+    if (!recoveredFile) {
+      throw new Error(`SmarterMail upload succeeded but file metadata for "${fileName}" could not be recovered from ${targetFolder}`)
+    }
+
+    uploadResponse.uploadData = {
+      ...(uploadResponse.uploadData || {}),
+      [fileName]: recoveredFile,
+    }
+
+    return uploadResponse
+  }
+
+  private async findUploadedFile(
+    accessToken: string,
+    folderPath: string,
+    fileName: string,
+    size: number
+  ): Promise<SmarterMailUploadFileMeta | undefined> {
+    const folderResponse = await this.getFolder(accessToken, folderPath)
+    if (!folderResponse.success || !folderResponse.folder) {
+      return undefined
+    }
+
+    const matchingFiles = (folderResponse.folder.files || [])
+      .filter(file => file.fileName === fileName && file.size === size)
+      .sort((a, b) => {
+        const dateA = Date.parse(a.dateAdded || '') || 0
+        const dateB = Date.parse(b.dateAdded || '') || 0
+        return dateB - dateA
+      })
+
+    return matchingFiles[0] as unknown as SmarterMailUploadFileMeta | undefined
   }
 
   /**

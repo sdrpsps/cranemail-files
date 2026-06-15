@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image'
 
 interface User {
   username: string
@@ -523,9 +524,11 @@ export default function Home() {
                         >
                           <div className="flex items-center space-x-3 min-w-0 flex-1 mr-3">
                             {/\.(jpg|jpeg|png|gif|webp)$/i.test(image.fileName) ? (
-                              <img
+                              <Image
                                 src={`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${image.publicLink}`}
                                 alt={image.fileName}
+                                width={48}
+                                height={48}
                                 className="w-12 h-12 object-cover rounded-lg border border-zinc-800 bg-zinc-950 flex-shrink-0 cursor-zoom-in hover:scale-105 transition-transform duration-200"
                                 onClick={() => window.open(`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${image.publicLink}`, '_blank')}
                               />
