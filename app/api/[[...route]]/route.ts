@@ -140,28 +140,31 @@ app.post('/auth/login', async (c) => {
       resolvedServerUrl
     )
 
-    // Check if Telegram is bound in DB
+    const encryptedPassword = encrypt(password)
+
+    await db.execute({
+      sql: `INSERT INTO users (id, email, serverUrl, encryptedPassword, refreshToken, updatedAt)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(email) DO UPDATE SET
+              serverUrl = excluded.serverUrl,
+              encryptedPassword = excluded.encryptedPassword,
+              refreshToken = excluded.refreshToken,
+              updatedAt = CURRENT_TIMESTAMP`,
+      args: [
+        nodeCrypto.randomUUID(),
+        result.emailAddress,
+        resolvedServerUrl,
+        encryptedPassword,
+        result.refreshToken
+      ]
+    })
+
     const userCheck = await db.execute({
       sql: 'SELECT telegramUserId FROM users WHERE email = ? LIMIT 1',
       args: [result.emailAddress]
     })
     const dbUser = userCheck.rows[0]
-
-    // If the user already has a bound Telegram account, automatically sync 
-    // the newest encrypted password and refresh token to keep the bot operational.
-    if (dbUser) {
-      await db.execute({
-        sql: `UPDATE users 
-              SET encryptedPassword = ?, refreshToken = ?, updatedAt = CURRENT_TIMESTAMP 
-              WHERE email = ?`,
-        args: [
-          encrypt(password),
-          result.refreshToken,
-          result.emailAddress
-        ]
-      })
-      console.log(`[Auth Sync] Updated credentials for bound user: ${result.emailAddress}`)
-    }
+    console.log(`[Auth Sync] Upserted user credentials: ${result.emailAddress}`)
 
     return apiSuccess(c, {
       username: result.username,
