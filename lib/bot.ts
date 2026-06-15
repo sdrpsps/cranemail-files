@@ -366,11 +366,13 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
       })
 
       // Send the shareable link back to user
+      const publicLink = linkResult.publicLink || ''
+      const publicUrl = `${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${publicLink}`
       await sendTelegramMessage(
         chatId,
         `✅ <b>File Uploaded Successfully!</b>\n\n` +
         `<b>Name:</b> <code>${fileName}</code>\n` +
-        `<b>Link:</b> <a href="${linkResult.publicLink}">${linkResult.publicLink}</a>`,
+        `<b>Link:</b> <a href="${publicUrl}">${publicUrl}</a>`,
         botMainMenu
       )
     } catch (err) {
