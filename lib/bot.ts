@@ -56,6 +56,14 @@ export interface TelegramUpdate {
   message?: TelegramMessage
 }
 
+interface UploadedImageRow {
+  createdAt?: string | number | null
+  size?: number | null
+  source?: string | null
+  fileName?: string | null
+  publicLink?: string | null
+}
+
 interface BindTokenRow {
   token: string
   email: string
@@ -135,7 +143,7 @@ async function getSmarterMailAuthForBot(user: UserRow): Promise<{ client: Smarte
 /**
  * Sends a text message to a specific Telegram chat.
  */
-export async function sendTelegramMessage(chatId: number | string, text: string, replyMarkup?: any) {
+export async function sendTelegramMessage(chatId: number | string, text: string, replyMarkup?: Record<string, unknown>) {
   const token = getBotToken()
   if (!token) {
     console.error('TELEGRAM_BOT_TOKEN is not configured.')
@@ -417,12 +425,15 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
         }
 
         let responseText = `📂 <b>Your Uploaded Images (Recent ${imagesRes.rows.length}):</b>\n\n`
-        imagesRes.rows.forEach((row: any, index: number) => {
-          const dateStr = row.createdAt ? new Date(row.createdAt).toLocaleString('zh-CN', { timeZone: process.env.TIMEZONE || 'Asia/Shanghai' }) : 'Unknown'
-          const sizeMb = ((row.size || 0) / (1024 * 1024)).toFixed(2)
-          const sourceIcon = row.source === 'telegram' ? '🤖' : '💻'
-          responseText += `${index + 1}. <b>${row.fileName}</b> (${sizeMb} MB) ${sourceIcon}\n`
-          responseText += `🔗 <a href="${`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${row.publicLink}`}">${`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${row.publicLink}`}</a>\n`
+        imagesRes.rows.forEach((row, index) => {
+          const image = row as unknown as UploadedImageRow
+          const dateStr = image.createdAt ? new Date(image.createdAt).toLocaleString('zh-CN', { timeZone: process.env.TIMEZONE || 'Asia/Shanghai' }) : 'Unknown'
+          const sizeMb = ((image.size || 0) / (1024 * 1024)).toFixed(2)
+          const sourceIcon = image.source === 'telegram' ? '🤖' : '💻'
+          const publicLink = image.publicLink || ''
+          const publicUrl = `${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${publicLink}`
+          responseText += `${index + 1}. <b>${image.fileName || 'Untitled'}</b> (${sizeMb} MB) ${sourceIcon}\n`
+          responseText += `🔗 <a href="${publicUrl}">${publicUrl}</a>\n`
           responseText += `📅 <i>${dateStr}</i>\n\n`
         })
 

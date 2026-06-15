@@ -28,7 +28,7 @@ export interface SmarterMailUserResponse {
     emailAddress?: string
     userName?: string
     fullName?: string
-    [key: string]: any
+    [key: string]: unknown
   }
 }
 

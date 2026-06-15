@@ -8,6 +8,7 @@ import type { BindData } from '@/app/types/app'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 
 interface TelegramBindModalProps {
   onClose: () => void
@@ -142,11 +143,13 @@ export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModa
                 href={bindData.bindUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={buttonVariants({
-                  variant: 'default',
-                  size: 'lg',
-                  className: 'h-11 w-full bg-[#2ea6da] text-white shadow-lg shadow-sky-500/10 hover:bg-[#2794c4]',
-                })}
+                className={cn(
+                  buttonVariants({
+                    variant: 'default',
+                    size: 'lg',
+                  }),
+                  'h-11 w-full bg-[#2ea6da] text-white shadow-lg shadow-sky-500/10 hover:bg-[#2794c4]'
+                )}
               >
                 <Send className="h-5 w-5" />
                 <span>Launch Telegram Bot</span>

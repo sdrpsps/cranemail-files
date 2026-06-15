@@ -127,6 +127,14 @@ Run the development server:
 npm run dev
 ```
 
+Run the Telegram bot locally in polling mode for debugging:
+
+```bash
+npm run dev:bot
+```
+
+`dev:bot` loads `.env.local`, requires `TELEGRAM_BOT_TOKEN`, deletes the active Telegram webhook, and then polls `getUpdates`. Use it for local bot debugging only, and re-register the production webhook when you are done.
+
 Open:
 
 ```text
@@ -217,6 +225,8 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://you
 ```
 
 For local development, expose your local server with a tunnel such as ngrok or Cloudflare Tunnel, then register the tunnel URL.
+
+Alternatively, use `npm run dev:bot` to debug the bot with Telegram polling instead of a webhook.
 
 ## UI Notes
 

@@ -325,8 +325,35 @@ app.post('/auth/telegram/bind-token', async (c) => {
       return apiError(c, 'Verification failed. Password is incorrect.', 401)
     }
 
-    // 3. Encrypt credentials and store bind token (expires in 10 minutes)
     const encryptedPassword = encrypt(password)
+
+    setAuthCookies(
+      c,
+      verifyAuth.accessToken,
+      verifyAuth.accessTokenExpiration,
+      verifyAuth.refreshToken,
+      verifyAuth.refreshTokenExpiration,
+      serverUrl
+    )
+
+    await db.execute({
+      sql: `INSERT INTO users (id, email, serverUrl, encryptedPassword, refreshToken, updatedAt)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(email) DO UPDATE SET
+              serverUrl = excluded.serverUrl,
+              encryptedPassword = excluded.encryptedPassword,
+              refreshToken = excluded.refreshToken,
+              updatedAt = CURRENT_TIMESTAMP`,
+      args: [
+        nodeCrypto.randomUUID(),
+        email,
+        serverUrl,
+        encryptedPassword,
+        verifyAuth.refreshToken
+      ]
+    })
+
+    // 3. Store bind token (expires in 10 minutes)
     const token = nodeCrypto.randomUUID()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 

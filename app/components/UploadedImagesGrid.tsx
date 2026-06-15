@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 interface UploadedImagesGridProps {
   images: UploadedImage[]
@@ -175,11 +176,13 @@ export function UploadedImagesGrid({
                       href={publicUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={buttonVariants({
-                        variant: 'outline',
-                        size: 'icon-xs',
-                        className: 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100',
-                      })}
+                      className={cn(
+                        buttonVariants({
+                          variant: 'outline',
+                          size: 'icon-xs',
+                        }),
+                        'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100'
+                      )}
                       title="Open Link"
                     >
                       <ExternalLink className="h-4 w-4" />

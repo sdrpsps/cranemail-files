@@ -127,6 +127,14 @@ Telegram bot token。只有在需要 bot 上传和绑定功能时才必须配置
 npm run dev
 ```
 
+本地用 polling 模式调试 Telegram bot：
+
+```bash
+npm run dev:bot
+```
+
+`dev:bot` 会读取 `.env.local`，需要配置 `TELEGRAM_BOT_TOKEN`，启动时会删除当前 Telegram webhook，然后通过 `getUpdates` 轮询消息。它只适合本地调试 bot；调试结束后需要重新注册生产环境 webhook。
+
 打开：
 
 ```text
@@ -217,6 +225,8 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://you
 ```
 
 本地开发时，可以用 ngrok 或 Cloudflare Tunnel 暴露本地服务，再注册 tunnel URL。
+
+也可以使用 `npm run dev:bot` 通过 Telegram polling 调试 bot，不需要本地 webhook。
 
 ## UI 说明
 

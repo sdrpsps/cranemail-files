@@ -1,6 +1,7 @@
 import { Star } from 'lucide-react'
 
 import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export function GitHubReferral() {
   return (
@@ -9,12 +10,13 @@ export function GitHubReferral() {
         href="https://github.com/sdrpsps/cranemail-images"
         target="_blank"
         rel="noopener noreferrer"
-        className={buttonVariants({
-          variant: 'outline',
-          size: 'sm',
-          className:
-            'pointer-events-auto h-9 border-zinc-700/80 bg-zinc-950/75 px-3 text-xs text-zinc-300 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl hover:bg-zinc-900 hover:text-white',
-        })}
+        className={cn(
+          buttonVariants({
+            variant: 'outline',
+            size: 'sm',
+          }),
+          'pointer-events-auto h-9 border-zinc-700/80 bg-zinc-950/75 px-3 text-xs text-zinc-300 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl hover:bg-zinc-900 hover:text-white'
+        )}
         aria-label="View CraneMail Images on GitHub"
       >
         <span>Star on GitHub</span>
