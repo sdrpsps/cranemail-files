@@ -82,7 +82,7 @@ interface UserRow {
 
 export const botMainMenu = {
   keyboard: [
-    [{ text: '📂 My Images / 我的图片' }, { text: '❓ Help / 帮助' }]
+    [{ text: '📂 My Images' }, { text: '❓ Help' }]
   ],
   resize_keyboard: true,
   one_time_keyboard: false
