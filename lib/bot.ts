@@ -75,10 +75,18 @@ interface UserRow {
   updatedAt?: string
 }
 
+export const botMainMenu = {
+  keyboard: [
+    [{ text: '📂 My Images / 我的图片' }, { text: '❓ Help / 帮助' }]
+  ],
+  resize_keyboard: true,
+  one_time_keyboard: false
+}
+
 /**
  * Sends a text message to a specific Telegram chat.
  */
-export async function sendTelegramMessage(chatId: number | string, text: string) {
+export async function sendTelegramMessage(chatId: number | string, text: string, replyMarkup?: any) {
   if (!BOT_TOKEN) {
     console.error('TELEGRAM_BOT_TOKEN is not configured.')
     return
@@ -92,6 +100,7 @@ export async function sendTelegramMessage(chatId: number | string, text: string)
         text,
         parse_mode: 'HTML',
         disable_web_page_preview: false,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     })
     if (!res.ok) {
@@ -145,7 +154,8 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
     if (args.length < 2) {
       await sendTelegramMessage(
         chatId,
-        `👋 <b>Welcome to Cranemail Image Host!</b>\n\nTo upload photos to your SmarterMail cloud storage using this bot, please link your account:\n\n1. Open our website in your browser.\n2. Sign in to your mail account.\n3. Click <b>"Link Telegram Bot"</b> to generate a binding link.\n\nOnce linked, any photo or document you send here will be uploaded and a public sharing link will be generated.`
+        `👋 <b>Welcome to Cranemail Image Host!</b>\n\nTo upload photos to your SmarterMail cloud storage using this bot, please link your account:\n\n1. Open our website in your browser.\n2. Sign in to your mail account.\n3. Click <b>"Link Telegram Bot"</b> to generate a binding link.\n\nOnce linked, any photo or document you send here will be uploaded and a public sharing link will be generated.`,
+        botMainMenu
       )
       return
     }
@@ -196,7 +206,8 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
       await sendTelegramMessage(
         chatId,
-        `🎉 <b>Binding Successful!</b>\n\nYour Telegram account has been linked to Cranemail account: <code>${bindToken.email}</code>.\n\nYou can now send photos or files to this bot, and they will be uploaded directly to your cloud drive!`
+        `🎉 <b>Binding Successful!</b>\n\nYour Telegram account has been linked to Cranemail account: <code>${bindToken.email}</code>.\n\nYou can now send photos or files to this bot, and they will be uploaded directly to your cloud drive!`,
+        botMainMenu
       )
     } catch (err) {
       console.error('Error binding account:', err)
@@ -290,19 +301,37 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
         throw new Error(linkResult.message || 'Failed to generate public download link.')
       }
 
+      // Save uploaded image metadata to database
+      const imageId = crypto.randomUUID()
+      await db.execute({
+        sql: `INSERT INTO uploaded_images (id, email, fileId, fileName, publicLink, size, source)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          imageId,
+          user.email,
+          fileMeta.id,
+          fileName,
+          linkResult.publicLink,
+          fileBuffer.length,
+          'telegram'
+        ]
+      })
+
       // Send the shareable link back to user
       await sendTelegramMessage(
         chatId,
         `✅ <b>File Uploaded Successfully!</b>\n\n` +
         `<b>Name:</b> <code>${fileName}</code>\n` +
-        `<b>Link:</b> <a href="${linkResult.publicLink}">${linkResult.publicLink}</a>`
+        `<b>Link:</b> <a href="${linkResult.publicLink}">${linkResult.publicLink}</a>`,
+        botMainMenu
       )
     } catch (err) {
       console.error('Telegram bot file upload error:', err)
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred during upload.'
       await sendTelegramMessage(
         chatId,
-        `❌ <b>Upload Failed:</b>\n${errorMessage}`
+        `❌ <b>Upload Failed:</b>\n${errorMessage}`,
+        botMainMenu
       )
     }
     return
@@ -310,9 +339,70 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
   // 3. Fallback for unhandled text messages
   if (text) {
-    await sendTelegramMessage(
-      chatId,
-      `💬 Send me a photo or a file to upload it directly to your Cranemail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.`
-    )
+    const isListCommand =
+      text.startsWith('/list') ||
+      text.startsWith('/images') ||
+      text.includes('My Images') ||
+      text.includes('我的图片')
+
+    if (isListCommand) {
+      try {
+        const userRes = await db.execute({
+          sql: 'SELECT * FROM users WHERE telegramUserId = ? LIMIT 1',
+          args: [String(fromId)],
+        })
+        const user = userRes.rows[0] as unknown as UserRow | undefined
+
+        if (!user) {
+          await sendTelegramMessage(
+            chatId,
+            '❌ <b>Access Denied:</b>\nYour Telegram account is not bound to a Cranemail account. Please sign in to the website and click <b>"Link Telegram Bot"</b> first.',
+            botMainMenu
+          )
+          return
+        }
+
+        const imagesRes = await db.execute({
+          sql: 'SELECT * FROM uploaded_images WHERE email = ? ORDER BY createdAt DESC LIMIT 10',
+          args: [user.email]
+        })
+
+        if (imagesRes.rows.length === 0) {
+          await sendTelegramMessage(
+            chatId,
+            '📂 <b>No uploaded images found.</b>\nSend me a photo or a file to start uploading!',
+            botMainMenu
+          )
+          return
+        }
+
+        let responseText = `📂 <b>Your Uploaded Images (Recent ${imagesRes.rows.length}):</b>\n\n`
+        imagesRes.rows.forEach((row: any, index: number) => {
+          const dateStr = row.createdAt ? new Date(row.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : 'Unknown'
+          const sizeMb = ((row.size || 0) / (1024 * 1024)).toFixed(2)
+          const sourceIcon = row.source === 'telegram' ? '🤖' : '💻'
+          responseText += `${index + 1}. <b>${row.fileName}</b> (${sizeMb} MB) ${sourceIcon}\n`
+          responseText += `🔗 <a href="${row.publicLink}">${row.publicLink}</a>\n`
+          responseText += `📅 <i>${dateStr}</i>\n\n`
+        })
+
+        await sendTelegramMessage(chatId, responseText, botMainMenu)
+      } catch (err) {
+        console.error('Telegram bot list images error:', err)
+        await sendTelegramMessage(chatId, '❌ <b>Failed to list images:</b> An error occurred.', botMainMenu)
+      }
+    } else if (text.includes('Help') || text.includes('帮助') || text.startsWith('/help')) {
+      await sendTelegramMessage(
+        chatId,
+        `💬 Send me a photo or a file to upload it directly to your Cranemail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.\nUse <code>📂 My Images</code> or <code>/list</code> to see your recently uploaded images.`,
+        botMainMenu
+      )
+    } else {
+      await sendTelegramMessage(
+        chatId,
+        `💬 Send me a photo or a file to upload it directly to your Cranemail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.`,
+        botMainMenu
+      )
+    }
   }
 }

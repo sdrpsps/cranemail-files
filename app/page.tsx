@@ -33,11 +33,35 @@ export default function Home() {
   const [bindError, setBindError] = useState('')
   const [bindData, setBindData] = useState<BindData | null>(null)
 
-  // Web Upload States
-  const [uploadFiles, setUploadFiles] = useState<{ name: string; url: string; size: string }[]>([])
+  // Unified Uploaded Images States
+  interface UploadedImage {
+    id: string
+    fileName: string
+    publicLink: string
+    size: number
+    source: string
+    createdAt: string
+  }
+  const [images, setImages] = useState<UploadedImage[]>([])
+  const [imagesLoading, setImagesLoading] = useState(false)
+  const [imagesError, setImagesError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [isDragActive, setIsDragActive] = useState(false)
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type })
+  }
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [toast])
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault()
@@ -65,6 +89,47 @@ export default function Home() {
     }
   }
 
+  const fetchImages = useCallback(async () => {
+    setImagesLoading(true)
+    setImagesError('')
+    try {
+      const res = await fetch('/api/images')
+      const data = await res.json()
+      if (data.success && data.data) {
+        setImages(data.data)
+      } else {
+        setImagesError(data.message || 'Failed to fetch uploaded images')
+      }
+    } catch (err) {
+      setImagesError('Network error. Failed to load uploaded images.')
+      console.error(err)
+    } finally {
+      setImagesLoading(false)
+    }
+  }, [])
+
+  const handleSyncWorkspace = async () => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/images/sync', {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (data.success && data.data) {
+        const count = data.data.syncedCount
+        showToast(`Successfully synced ${count} new image(s) from workspace!`)
+        fetchImages()
+      } else {
+        showToast(data.message || 'Sync failed. Please try again.', 'error')
+      }
+    } catch (err) {
+      showToast('Network error during sync.', 'error')
+      console.error(err)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const uploadFile = async (file: File) => {
     setUploading(true)
     setUploadError('')
@@ -78,15 +143,16 @@ export default function Home() {
       })
       const data = await res.json()
       if (data.success && data.data) {
-        const sizeStr = (file.size / (1024 * 1024)).toFixed(2) + ' MB'
-        setUploadFiles((prev) => [
-          {
-            name: data.data.fileName,
-            url: data.data.publicLink,
-            size: sizeStr,
-          },
-          ...prev,
-        ])
+        const newImg: UploadedImage = {
+          id: data.data.id,
+          fileName: data.data.fileName,
+          publicLink: data.data.publicLink,
+          size: file.size,
+          source: 'web',
+          createdAt: new Date().toISOString()
+        }
+        setImages((prev) => [newImg, ...prev])
+        showToast('Image uploaded successfully!')
       } else {
         setUploadError(data.message || 'Upload failed. Please try again.')
       }
@@ -95,6 +161,71 @@ export default function Home() {
       console.error(err)
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleDeleteImage = async (id: string) => {
+    if (!confirm('Are you sure you want to remove this image record?')) {
+      return
+    }
+
+    setDeletingIds((prev) => {
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+
+    try {
+      const res = await fetch(`/api/images/${id}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+      if (data.success) {
+        setImages((prev) => prev.filter((img) => img.id !== id))
+        showToast('Image record removed')
+      } else {
+        showToast(data.message || 'Failed to delete the image record', 'error')
+      }
+    } catch (err) {
+      showToast('Connection error. Failed to delete image.', 'error')
+      console.error(err)
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
+  const handleCopyLink = (url: string) => {
+    navigator.clipboard.writeText(url)
+    showToast('Direct link copied to clipboard!')
+  }
+
+  const formatSize = (bytes: number) => {
+    if (!bytes) return '0 B'
+    const mb = bytes / (1024 * 1024)
+    if (mb >= 0.1) return mb.toFixed(2) + ' MB'
+    const kb = bytes / 1024
+    return kb.toFixed(1) + ' KB'
+  }
+
+  const formatDate = (isoString?: string) => {
+    if (!isoString) return ''
+    try {
+      const cleanIso = isoString.includes(' ') && !isoString.includes('T')
+        ? isoString.replace(' ', 'T') + 'Z'
+        : isoString
+      const d = new Date(cleanIso)
+      return d.toLocaleDateString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch (e) {
+      return isoString
     }
   }
 
@@ -120,6 +251,14 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     checkSession()
   }, [checkSession])
+
+  useEffect(() => {
+    if (user) {
+      fetchImages()
+    } else {
+      setImages([])
+    }
+  }, [user, fetchImages])
 
   // Handle Login submission
   const handleLogin = async (e: React.FormEvent) => {
@@ -340,50 +479,141 @@ export default function Home() {
                 )}
 
                 {/* Uploaded Files History */}
-                {uploadFiles.length > 0 && (
-                  <div className="mt-2 space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                    <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">Uploaded Images</p>
-                    {uploadFiles.map((file, idx) => (
-                      <div key={idx} className="bg-zinc-900/50 border border-zinc-800/80 rounded-lg p-2.5 flex flex-wrap sm:flex-nowrap items-center justify-between text-xs animate-[fadeIn_0.2s_ease-out]">
-                        <div className="flex items-center space-x-2.5 min-w-0 flex-1 mr-2">
-                          {/\.(jpg|jpeg|png|gif|webp)$/i.test(file.name) ? (
-                            <img src={file.url} alt={file.name} className="w-8 h-8 object-cover rounded-md border border-zinc-800 bg-zinc-950 flex-shrink-0" />
-                          ) : (
-                            <div className="w-8 h-8 bg-zinc-950 border border-zinc-800 rounded-md flex items-center justify-center flex-shrink-0">
-                              <svg className="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
+                <div className="mt-4 border-t border-zinc-800/60 pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                      Uploaded History ({images.length})
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={handleSyncWorkspace}
+                        disabled={syncing || imagesLoading}
+                        className="flex items-center space-x-1 py-1 px-2.5 rounded-lg border border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900 text-[10px] text-zinc-300 font-medium hover:text-white transition-all disabled:opacity-50 select-none cursor-pointer"
+                        title="Sync existing images from your SmarterMail storage folders"
+                      >
+                        {syncing ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+                            <span>Syncing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L21 4" />
+                            </svg>
+                            <span>Sync Workspace</span>
+                          </>
+                        )}
+                      </button>
+                      {imagesLoading && !syncing && (
+                        <div className="w-4 h-4 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+                      )}
+                    </div>
+                  </div>
+
+                  {imagesError && (
+                    <p className="text-xs text-red-400">{imagesError}</p>
+                  )}
+
+                  {images.length > 0 ? (
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                      {images.map((image) => (
+                        <div
+                          key={image.id}
+                          className="bg-zinc-950/40 border border-zinc-850 hover:border-zinc-850 rounded-xl p-3 flex items-center justify-between text-xs transition-all duration-205"
+                        >
+                          <div className="flex items-center space-x-3 min-w-0 flex-1 mr-3">
+                            {/\.(jpg|jpeg|png|gif|webp)$/i.test(image.fileName) ? (
+                              <img
+                                src={image.publicLink}
+                                alt={image.fileName}
+                                className="w-12 h-12 object-cover rounded-lg border border-zinc-800 bg-zinc-950 flex-shrink-0 cursor-zoom-in hover:scale-105 transition-transform duration-200"
+                                onClick={() => window.open(image.publicLink, '_blank')}
+                              />
+                            ) : (
+                              <div className="w-12 h-12 bg-zinc-950 border border-zinc-800 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg className="w-5 h-5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <p className="text-zinc-200 font-medium truncate" title={image.fileName}>
+                                {image.fileName}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10px] text-zinc-500 font-mono">
+                                  {formatSize(image.size)}
+                                </span>
+                                <span className="text-[10px] text-zinc-500 font-mono">
+                                  • {formatDate(image.createdAt)}
+                                </span>
+                                {image.source === 'telegram' ? (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 font-semibold flex items-center gap-0.5">
+                                    🤖 Bot
+                                  </span>
+                                ) : image.source === 'workspace' ? (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-400 font-semibold flex items-center gap-0.5">
+                                    💼 Workspace
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold flex items-center gap-0.5">
+                                    💻 Web
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-zinc-200 font-medium truncate" title={file.name}>{file.name}</p>
-                            <p className="text-[10px] text-zinc-500 font-mono">{file.size}</p>
+                          </div>
+
+                          <div className="flex items-center space-x-1 flex-shrink-0">
+                            <a
+                              href={image.publicLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 bg-zinc-900/50 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-zinc-400 hover:text-zinc-100 transition-all"
+                              title="Open Link"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                            <button
+                              onClick={() => handleCopyLink(image.publicLink)}
+                              className="p-1.5 bg-zinc-900/50 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-lg text-zinc-400 hover:text-blue-400 transition-all"
+                              title="Copy Direct Link"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteImage(image.id)}
+                              disabled={deletingIds.has(image.id)}
+                              className="p-1.5 bg-zinc-900/50 hover:bg-red-950/40 border border-zinc-800 hover:border-red-900/40 rounded-lg text-zinc-400 hover:text-red-400 transition-all disabled:opacity-50"
+                              title="Delete Record"
+                            >
+                              {deletingIds.has(image.id) ? (
+                                <div className="w-4 h-4 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" />
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              )}
+                            </button>
                           </div>
                         </div>
-                        
-                        <div className="flex items-center space-x-1 flex-shrink-0 mt-2 sm:mt-0">
-                          <a href={file.url} target="_blank" rel="noopener noreferrer" className="p-1.5 hover:bg-zinc-850 rounded-md text-zinc-400 hover:text-zinc-200 transition-colors" title="Open Link">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(file.url)
-                              alert('Link copied to clipboard!')
-                            }}
-                            className="p-1.5 hover:bg-zinc-850 rounded-md text-zinc-400 hover:text-blue-400 transition-colors"
-                            title="Copy Direct Link"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-6 text-center bg-zinc-950/20 border border-dashed border-zinc-850 rounded-xl">
+                      <svg className="w-7 h-7 text-zinc-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-[11px] text-zinc-500">No images uploaded yet.</p>
+                      <p className="text-[9px] text-zinc-650 mt-0.5">Drag & drop files above to start.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -617,6 +847,27 @@ export default function Home() {
               </div>
             )}
           </div>
+        </div>
+      )}
+      {/* Toast Notification Container */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border transition-all duration-300 transform translate-y-0 scale-100 flex items-center space-x-2.5 animate-[fadeIn_0.2s_ease-out] ${
+          toast.type === 'error'
+            ? 'bg-red-950/80 border-red-900/60 text-red-300 backdrop-blur-md'
+            : toast.type === 'info'
+            ? 'bg-blue-950/80 border-blue-900/60 text-blue-300 backdrop-blur-md'
+            : 'bg-emerald-950/80 border-emerald-900/60 text-emerald-300 backdrop-blur-md'
+        }`}>
+          {toast.type === 'error' ? (
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          )}
+          <span className="text-sm font-medium">{toast.message}</span>
         </div>
       )}
     </div>

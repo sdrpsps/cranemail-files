@@ -212,4 +212,43 @@ export class SmarterMailClient {
       'Authorization': `Bearer ${accessToken}`,
     })
   }
+
+  /**
+   * Retrieves a folder's files and subfolders from file storage.
+   */
+  async getFolder(accessToken: string, folderPath: string): Promise<SmarterMailFolderResponse> {
+    const payload = {
+      folder: folderPath,
+      startIndex: 0,
+      count: 1000 // retrieve up to 1000 items
+    }
+    return this.post<SmarterMailFolderResponse>('api/v1/filestorage/folder', payload, {
+      'Authorization': `Bearer ${accessToken}`
+    })
+  }
+}
+
+export interface SmarterMailFileItem {
+  id: string
+  fileName: string
+  type: string
+  size: number
+  dateAdded: string
+  published: boolean
+  publicDownloadLink?: string
+  folderPath: string
+}
+
+export interface SmarterMailFolderItem {
+  name: string
+  path: string
+  size: number
+  subFolders: SmarterMailFolderItem[]
+  files: SmarterMailFileItem[]
+}
+
+export interface SmarterMailFolderResponse {
+  success: boolean
+  message?: string
+  folder?: SmarterMailFolderItem
 }

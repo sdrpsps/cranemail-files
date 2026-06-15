@@ -278,6 +278,13 @@ app.post('/upload', async (c) => {
     const client = new SmarterMailClient(serverUrl)
     const folderPath = SmarterMailClient.getUtc8DatePath()
 
+    // Fetch email address of the current user to tag database records
+    const userSettings = await client.getUserSettings(accessToken)
+    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+      return apiError(c, 'Failed to fetch user email context', 401)
+    }
+    const email = userSettings.emailAddress
+
     // 1. Upload to SmarterMail storage
     const uploadResult = await client.uploadFile(accessToken, fileBuffer, fileName, folderPath)
     if (!uploadResult.success || !uploadResult.uploadData) {
@@ -295,7 +302,24 @@ app.post('/upload', async (c) => {
       return apiError(c, linkResult.message || 'Failed to generate public share link', 500)
     }
 
+    // 3. Save uploaded image metadata to database
+    const imageId = nodeCrypto.randomUUID()
+    await db.execute({
+      sql: `INSERT INTO uploaded_images (id, email, fileId, fileName, publicLink, size, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        imageId,
+        email,
+        fileMeta.id,
+        fileName,
+        linkResult.publicLink,
+        file.size,
+        'web'
+      ]
+    })
+
     return apiSuccess(c, {
+      id: imageId,
       fileName,
       publicLink: linkResult.publicLink,
       size: file.size,
@@ -303,6 +327,187 @@ app.post('/upload', async (c) => {
   } catch (error) {
     console.error('Web upload endpoint error:', error)
     const errorMessage = error instanceof Error ? error.message : 'An error occurred during file upload'
+    return apiError(c, errorMessage, 500)
+  }
+})
+
+// GET /api/images
+app.get('/images', async (c) => {
+  const authContext = await getValidAccessToken(c)
+  if (!authContext) {
+    return apiError(c, 'Not authenticated', 401)
+  }
+
+  const { accessToken, serverUrl } = authContext
+  const client = new SmarterMailClient(serverUrl)
+
+  try {
+    const userSettings = await client.getUserSettings(accessToken)
+    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+      return apiError(c, 'Failed to fetch user email context', 401)
+    }
+    const email = userSettings.emailAddress
+
+    const result = await db.execute({
+      sql: 'SELECT * FROM uploaded_images WHERE email = ? ORDER BY createdAt DESC',
+      args: [email]
+    })
+
+    // Map rows to a cleaner format if necessary, or return directly
+    return apiSuccess(c, result.rows, 'Uploaded images retrieved successfully')
+  } catch (error) {
+    console.error('Fetch images error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred while fetching images'
+    return apiError(c, errorMessage, 500)
+  }
+})
+
+// DELETE /api/images/:id
+app.delete('/images/:id', async (c) => {
+  const authContext = await getValidAccessToken(c)
+  if (!authContext) {
+    return apiError(c, 'Not authenticated', 401)
+  }
+
+  const { accessToken, serverUrl } = authContext
+  const client = new SmarterMailClient(serverUrl)
+
+  try {
+    const id = c.req.param('id')
+    if (!id) {
+      return apiError(c, 'Image ID is required', 400)
+    }
+
+    const userSettings = await client.getUserSettings(accessToken)
+    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+      return apiError(c, 'Failed to fetch user email context', 401)
+    }
+    const email = userSettings.emailAddress
+
+    // Check if the image belongs to this user
+    const checkRes = await db.execute({
+      sql: 'SELECT id, fileId FROM uploaded_images WHERE id = ? AND email = ? LIMIT 1',
+      args: [id, email]
+    })
+
+    if (checkRes.rows.length === 0) {
+      return apiError(c, 'Image not found or access denied', 404)
+    }
+
+    // Delete from local DB
+    await db.execute({
+      sql: 'DELETE FROM uploaded_images WHERE id = ?',
+      args: [id]
+    })
+
+    return apiSuccess(c, { id }, 'Image deleted successfully')
+  } catch (error) {
+    console.error('Delete image error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred while deleting image'
+    return apiError(c, errorMessage, 500)
+  }
+})
+
+// POST /api/images/sync
+app.post('/images/sync', async (c) => {
+  const authContext = await getValidAccessToken(c)
+  if (!authContext) {
+    return apiError(c, 'Not authenticated', 401)
+  }
+
+  const { accessToken, serverUrl } = authContext
+  const client = new SmarterMailClient(serverUrl)
+
+  try {
+    const userSettings = await client.getUserSettings(accessToken)
+    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+      return apiError(c, 'Failed to fetch user email context', 401)
+    }
+    const email = userSettings.emailAddress
+
+    let syncedCount = 0
+
+    // Recursive folder scanning function
+    const walkFolder = async (folderPath: string) => {
+      const res = await client.getFolder(accessToken, folderPath)
+      if (!res.success || !res.folder) {
+        console.warn(`[Sync] Failed to list folder "${folderPath}":`, res.message)
+        return
+      }
+
+      // 1. Process files in current folder
+      const files = res.folder.files || []
+      for (const file of files) {
+        // Only sync images
+        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(file.fileName)) {
+          let publicLink = file.publicDownloadLink
+
+          // Generate public link if not already generated/published
+          if (!publicLink) {
+            try {
+              const linkRes = await client.generatePublicLink(accessToken, file.id)
+              if (linkRes.success && linkRes.publicLink) {
+                publicLink = linkRes.publicLink
+              }
+            } catch (linkErr) {
+              console.warn(`[Sync] Failed to generate public link for file "${file.fileName}" (${file.id}):`, linkErr)
+            }
+          }
+
+          if (publicLink) {
+            // Check if the image record is already in our DB (either by fileId or publicLink)
+            const checkExist = await db.execute({
+              sql: 'SELECT id FROM uploaded_images WHERE fileId = ? OR publicLink = ? LIMIT 1',
+              args: [file.id, publicLink]
+            })
+
+            if (checkExist.rows.length === 0) {
+              const imageId = nodeCrypto.randomUUID()
+              let createdAt = new Date().toISOString()
+              if (file.dateAdded) {
+                try {
+                  createdAt = new Date(file.dateAdded).toISOString()
+                } catch {
+                  // Fallback
+                }
+              }
+
+              await db.execute({
+                sql: `INSERT INTO uploaded_images (id, email, fileId, fileName, publicLink, size, source, createdAt)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                  imageId,
+                  email,
+                  file.id,
+                  file.fileName,
+                  publicLink,
+                  file.size,
+                  'workspace',
+                  createdAt
+                ]
+              })
+              syncedCount++
+            }
+          }
+        }
+      }
+
+      // 2. Recurse into subdirectories
+      const subFolders = res.folder.subFolders || []
+      for (const sub of subFolders) {
+        if (sub.path) {
+          await walkFolder(sub.path)
+        }
+      }
+    }
+
+    // Start scanning from root directory "/"
+    await walkFolder('/')
+
+    return apiSuccess(c, { syncedCount }, `Successfully synced ${syncedCount} new workspace images`)
+  } catch (error) {
+    console.error('Workspace sync error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred during synchronization'
     return apiError(c, errorMessage, 500)
   }
 })

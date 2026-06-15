@@ -43,6 +43,19 @@ export async function initDb() {
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `)
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS uploaded_images (
+        id TEXT PRIMARY KEY,
+        email TEXT,
+        fileId TEXT,
+        fileName TEXT,
+        publicLink TEXT,
+        size INTEGER,
+        source TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
     
     console.log('[Database] Tables checked/created successfully.')
   } catch (err) {
