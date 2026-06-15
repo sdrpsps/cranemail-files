@@ -3,7 +3,7 @@ import { handle } from 'hono/vercel'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { apiSuccess, apiError } from '@/lib/response'
-import { SmarterMailClient } from '@/lib/smartermail'
+import { SmarterMailClient, SmarterMailHttpError, SmarterMailRefreshResponse } from '@/lib/smartermail'
 import { encrypt } from '@/lib/crypto'
 import { db, initDb } from '@/lib/db'
 import { handleTelegramUpdate } from '@/lib/bot'
@@ -51,6 +51,66 @@ const getCookieOptions = (expiresStr?: string) => ({
   sameSite: 'Lax' as const,
   ...(expiresStr ? { expires: new Date(expiresStr) } : {}),
 })
+const ACCESS_TOKEN_REFRESH_WINDOW_MS = 2 * 60 * 1000
+const refreshTokenFlights = new Map<string, Promise<SmarterMailRefreshResponse>>()
+
+function clearAuthCookies(c: Context) {
+  deleteCookie(c, 'sm_access_token', { path: '/' })
+  deleteCookie(c, 'sm_access_token_expires', { path: '/' })
+  deleteCookie(c, 'sm_refresh_token', { path: '/' })
+  deleteCookie(c, 'sm_server_url', { path: '/' })
+}
+
+function setAuthCookies(
+  c: Context,
+  accessToken: string,
+  accessTokenExpiration: string,
+  refreshToken: string,
+  refreshTokenExpiration: string,
+  serverUrl: string
+) {
+  setCookie(c, 'sm_access_token', accessToken, getCookieOptions(accessTokenExpiration))
+  setCookie(c, 'sm_access_token_expires', accessTokenExpiration, getCookieOptions(accessTokenExpiration))
+  setCookie(c, 'sm_refresh_token', refreshToken, getCookieOptions(refreshTokenExpiration))
+  setCookie(c, 'sm_server_url', serverUrl, getCookieOptions(refreshTokenExpiration))
+}
+
+function shouldRefreshAccessToken(expiresStr?: string): boolean {
+  if (!expiresStr) {
+    return false
+  }
+
+  const expiresAt = Date.parse(expiresStr)
+  if (!Number.isFinite(expiresAt)) {
+    return false
+  }
+
+  return expiresAt - Date.now() <= ACCESS_TOKEN_REFRESH_WINDOW_MS
+}
+
+function getRefreshFlightKey(serverUrl: string, refreshToken: string): string {
+  return nodeCrypto
+    .createHash('sha256')
+    .update(`${serverUrl}\0${refreshToken}`)
+    .digest('hex')
+}
+
+async function refreshSmarterMailToken(serverUrl: string, refreshToken: string): Promise<SmarterMailRefreshResponse> {
+  const key = getRefreshFlightKey(serverUrl, refreshToken)
+  const existingFlight = refreshTokenFlights.get(key)
+  if (existingFlight) {
+    return existingFlight
+  }
+
+  const flight = new SmarterMailClient(serverUrl)
+    .refreshToken(refreshToken)
+    .finally(() => {
+      refreshTokenFlights.delete(key)
+    })
+
+  refreshTokenFlights.set(key, flight)
+  return flight
+}
 
 // --- Authentication Endpoints ---
 
@@ -70,11 +130,15 @@ app.post('/auth/login', async (c) => {
       return apiError(c, result.message || 'Authentication failed', 401)
     }
 
-    // Set HTTP-Only cookies
-    setCookie(c, 'sm_access_token', result.accessToken, getCookieOptions(result.accessTokenExpiration))
-    setCookie(c, 'sm_refresh_token', result.refreshToken, getCookieOptions(result.refreshTokenExpiration))
-    // Store server url in cookie so subsequent operations know which mail server to target
-    setCookie(c, 'sm_server_url', serverUrl || process.env.NEXT_PUBLIC_SMARTERMAIL_URL || 'https://us1.workspace.org', getCookieOptions(result.refreshTokenExpiration))
+    const resolvedServerUrl = serverUrl || process.env.NEXT_PUBLIC_SMARTERMAIL_URL || 'https://us1.workspace.org'
+    setAuthCookies(
+      c,
+      result.accessToken,
+      result.accessTokenExpiration,
+      result.refreshToken,
+      result.refreshTokenExpiration,
+      resolvedServerUrl
+    )
 
     // Check if Telegram is bound in DB
     const userCheck = await db.execute({
@@ -104,7 +168,7 @@ app.post('/auth/login', async (c) => {
       emailAddress: result.emailAddress,
       isAdmin: result.isAdmin,
       isDomainAdmin: result.isDomainAdmin,
-      serverUrl: serverUrl || process.env.NEXT_PUBLIC_SMARTERMAIL_URL || 'https://us1.workspace.org',
+      serverUrl: resolvedServerUrl,
       isTelegramBound: !!(dbUser && dbUser.telegramUserId),
     }, 'Authentication successful')
   } catch (error) {
@@ -117,29 +181,42 @@ app.post('/auth/login', async (c) => {
 // Helper to retrieve and automatically refresh SmarterMail access token from cookies
 async function getValidAccessToken(c: Context, forceRefresh = false): Promise<{ accessToken: string; serverUrl: string } | null> {
   const accessToken = forceRefresh ? null : getCookie(c, 'sm_access_token')
+  const accessTokenExpires = getCookie(c, 'sm_access_token_expires')
   const refreshToken = getCookie(c, 'sm_refresh_token')
   const serverUrl = getCookie(c, 'sm_server_url')
 
   if (!serverUrl) return null
 
-  if (accessToken) {
+  if (accessToken && !forceRefresh && !shouldRefreshAccessToken(accessTokenExpires)) {
     return { accessToken, serverUrl }
   }
 
   if (refreshToken) {
     try {
       console.log('Refreshing expired SmarterMail access token in helper...')
-      const client = new SmarterMailClient(serverUrl)
-      const refreshResult = await client.refreshToken(refreshToken)
+      const refreshResult = await refreshSmarterMailToken(serverUrl, refreshToken)
       
       if (refreshResult.success && refreshResult.accessToken) {
-        setCookie(c, 'sm_access_token', refreshResult.accessToken, getCookieOptions(refreshResult.accessTokenExpiration))
-        setCookie(c, 'sm_refresh_token', refreshResult.refreshToken || refreshToken, getCookieOptions(refreshResult.refreshTokenExpiration))
+        setAuthCookies(
+          c,
+          refreshResult.accessToken,
+          refreshResult.accessTokenExpiration,
+          refreshResult.refreshToken || refreshToken,
+          refreshResult.refreshTokenExpiration,
+          serverUrl
+        )
         return { accessToken: refreshResult.accessToken, serverUrl }
       }
     } catch (err) {
       console.error('Token refresh helper failed:', err)
+      if (!(err instanceof SmarterMailHttpError) || err.status !== 401) {
+        throw err
+      }
     }
+  }
+
+  if (accessToken && !forceRefresh) {
+    return { accessToken, serverUrl }
   }
 
   return null
@@ -152,6 +229,7 @@ async function callSmarterMail<T>(
 ): Promise<T> {
   let authContext = await getValidAccessToken(c)
   if (!authContext) {
+    clearAuthCookies(c)
     throw new HTTPException(401, { message: 'Not authenticated' })
   }
 
@@ -159,14 +237,15 @@ async function callSmarterMail<T>(
   try {
     return await operation(client, authContext.accessToken)
   } catch (err) {
-    const is401 = err instanceof Error && err.message.includes('401')
-    if (is401) {
+    if (err instanceof SmarterMailHttpError && err.status === 401) {
       console.log('[SmarterMail Client] Detected 401 error. Attempting token refresh and retry...')
       authContext = await getValidAccessToken(c, true)
       if (authContext) {
         client = new SmarterMailClient(authContext.serverUrl)
         return await operation(client, authContext.accessToken)
       }
+      clearAuthCookies(c)
+      throw new HTTPException(401, { message: 'Not authenticated' })
     }
     throw err
   }
@@ -203,18 +282,18 @@ app.get('/auth/me', async (c) => {
     }, 'Current user retrieved successfully')
   } catch (err) {
     console.error('getUserSettings in me failed:', err)
-    deleteCookie(c, 'sm_access_token', { path: '/' })
-    deleteCookie(c, 'sm_refresh_token', { path: '/' })
-    deleteCookie(c, 'sm_server_url', { path: '/' })
-    return apiError(c, 'Not authenticated', 401)
+    if (err instanceof HTTPException && err.status === 401) {
+      clearAuthCookies(c)
+      return apiError(c, 'Not authenticated', 401)
+    }
+    const errorMessage = err instanceof Error ? err.message : 'An error occurred while retrieving current user'
+    return apiError(c, errorMessage, 500)
   }
 })
 
 // POST /api/auth/logout
 app.post('/auth/logout', (c) => {
-  deleteCookie(c, 'sm_access_token', { path: '/' })
-  deleteCookie(c, 'sm_refresh_token', { path: '/' })
-  deleteCookie(c, 'sm_server_url', { path: '/' })
+  clearAuthCookies(c)
   return apiSuccess(c, null, 'Successfully logged out')
 })
 
@@ -289,7 +368,7 @@ app.post('/upload', async (c) => {
     const fileName = file.name || `web_upload_${Date.now()}`
 
     const uploadResult = await callSmarterMail(c, async (client, accessToken) => {
-      const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getUtc8DatePath()
+      const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getDatePath()
 
       // Fetch email address of the current user to tag database records
       const userSettings = await client.getUserSettings(accessToken)

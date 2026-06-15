@@ -50,6 +50,17 @@ export interface SmarterMailLinkResponse {
   publicLink?: string
 }
 
+export class SmarterMailHttpError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public body?: string
+  ) {
+    super(message)
+    this.name = 'SmarterMailHttpError'
+  }
+}
+
 function getMimeType(fileName: string): string {
   const ext = fileName.split('.').pop()?.toLowerCase()
   switch (ext) {
@@ -117,7 +128,11 @@ export class SmarterMailClient {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`SmarterMail HTTP Error: ${response.status} - ${errorText || response.statusText}`)
+      throw new SmarterMailHttpError(
+        response.status,
+        `SmarterMail HTTP Error: ${response.status} - ${errorText || response.statusText}`,
+        errorText
+      )
     }
 
     return response.json() as Promise<T>
@@ -137,7 +152,11 @@ export class SmarterMailClient {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`SmarterMail HTTP Error: ${response.status} - ${errorText || response.statusText}`)
+      throw new SmarterMailHttpError(
+        response.status,
+        `SmarterMail HTTP Error: ${response.status} - ${errorText || response.statusText}`,
+        errorText
+      )
     }
 
     return response.json() as Promise<T>
@@ -181,13 +200,13 @@ export class SmarterMailClient {
   }
 
   /**
-   * Helper to get current date folder path in UTC+8 (Asia/Shanghai) timezone.
+   * Helper to get current date folder path using the configured upload timezone.
    * Returns path in format: /YYYY/MM/DD
    */
-  static getUtc8DatePath(): string {
+  static getDatePath(): string {
     const d = new Date()
     const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Shanghai',
+      timeZone: process.env.TIMEZONE || 'Asia/Shanghai',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -302,7 +321,11 @@ export class SmarterMailClient {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`SmarterMail Upload HTTP Error: ${response.status} - ${errorText || response.statusText}`)
+      throw new SmarterMailHttpError(
+        response.status,
+        `SmarterMail Upload HTTP Error: ${response.status} - ${errorText || response.statusText}`,
+        errorText
+      )
     }
 
     const uploadResponse = await response.json() as SmarterMailUploadResponse

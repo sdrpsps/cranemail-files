@@ -4,6 +4,7 @@ declare global {
       NEXT_PUBLIC_SMARTERMAIL_URL: string
       SMARTERMAIL_CLIENT_ID: string
       PUBLIC_FOLDER?: string
+      TIMEZONE?: string
       ENCRYPTION_KEY: string
       TELEGRAM_BOT_TOKEN: string
       TELEGRAM_BOT_USERNAME: string

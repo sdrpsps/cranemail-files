@@ -85,6 +85,53 @@ export const botMainMenu = {
   one_time_keyboard: false
 }
 
+async function getSmarterMailAuthForBot(user: UserRow): Promise<{ client: SmarterMailClient; accessToken: string }> {
+  const client = new SmarterMailClient(user.serverUrl)
+
+  if (user.refreshToken) {
+    try {
+      const refreshResult = await client.refreshToken(user.refreshToken)
+      if (refreshResult.success && refreshResult.accessToken) {
+        await db.execute({
+          sql: `UPDATE users
+                SET refreshToken = ?, updatedAt = CURRENT_TIMESTAMP
+                WHERE email = ?`,
+          args: [
+            refreshResult.refreshToken || user.refreshToken,
+            user.email
+          ]
+        })
+        return { client, accessToken: refreshResult.accessToken }
+      }
+      console.warn(`[Telegram Bot] Refresh token failed for ${user.email}: ${refreshResult.message || 'Unknown refresh failure'}`)
+    } catch (err) {
+      console.warn(`[Telegram Bot] Refresh token request failed for ${user.email}:`, err)
+    }
+  }
+
+  if (!user.encryptedPassword) {
+    throw new Error('SmarterMail session expired. Please re-bind your account on the web page.')
+  }
+
+  const password = decrypt(user.encryptedPassword)
+  const authResult = await client.authenticateUser(user.email, password)
+  if (!authResult.success || !authResult.accessToken) {
+    throw new Error(authResult.message || 'SmarterMail authentication failed. Please re-bind your account on the web page.')
+  }
+
+  await db.execute({
+    sql: `UPDATE users
+          SET refreshToken = ?, updatedAt = CURRENT_TIMESTAMP
+          WHERE email = ?`,
+    args: [
+      authResult.refreshToken,
+      user.email
+    ]
+  })
+
+  return { client, accessToken: authResult.accessToken }
+}
+
 /**
  * Sends a text message to a specific Telegram chat.
  */
@@ -254,18 +301,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
       await sendTelegramMessage(chatId, '⚡ <i>Uploading to Cranemail Cloud Storage...</i>')
 
-      if (!user.encryptedPassword) {
-        throw new Error('No password stored. Please log out and re-bind your account on the web page.')
-      }
-
-      // Decrypt password to authenticate session
-      const password = decrypt(user.encryptedPassword)
-      const client = new SmarterMailClient(user.serverUrl)
-
-      const authResult = await client.authenticateUser(user.email, password)
-      if (!authResult.success || !authResult.accessToken) {
-        throw new Error(authResult.message || 'SmarterMail authentication failed.')
-      }
+      const { client, accessToken } = await getSmarterMailAuthForBot(user)
 
       // Fetch file path info from Telegram
       const tgFileRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`)
@@ -285,10 +321,10 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
       const fileBuffer = Buffer.from(await tgDownRes.arrayBuffer())
 
-      const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getUtc8DatePath()
+      const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getDatePath()
 
       // Upload file to SmarterMail
-      const uploadResult = await client.uploadFile(authResult.accessToken, fileBuffer, fileName, folderPath)
+      const uploadResult = await client.uploadFile(accessToken, fileBuffer, fileName, folderPath)
       if (!uploadResult.success || !uploadResult.uploadData) {
         throw new Error(uploadResult.message || 'SmarterMail upload failed.')
       }
@@ -300,7 +336,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
       }
 
       // Publish the file and obtain the sharing URL
-      const linkResult = await client.generatePublicLink(authResult.accessToken, fileMeta.id)
+      const linkResult = await client.generatePublicLink(accessToken, fileMeta.id)
       if (!linkResult.success || !linkResult.publicLink) {
         throw new Error(linkResult.message || 'Failed to generate public download link.')
       }
@@ -382,7 +418,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
         let responseText = `📂 <b>Your Uploaded Images (Recent ${imagesRes.rows.length}):</b>\n\n`
         imagesRes.rows.forEach((row: any, index: number) => {
-          const dateStr = row.createdAt ? new Date(row.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : 'Unknown'
+          const dateStr = row.createdAt ? new Date(row.createdAt).toLocaleString('zh-CN', { timeZone: process.env.TIMEZONE || 'Asia/Shanghai' }) : 'Unknown'
           const sizeMb = ((row.size || 0) / (1024 * 1024)).toFixed(2)
           const sourceIcon = row.source === 'telegram' ? '🤖' : '💻'
           responseText += `${index + 1}. <b>${row.fileName}</b> (${sizeMb} MB) ${sourceIcon}\n`
