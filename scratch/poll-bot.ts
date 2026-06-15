@@ -25,7 +25,7 @@ try {
 
 import { handleTelegramUpdate } from '../lib/bot'
 
-const token = process.env.TELEGRAM_BOT_TOKEN
+const token = process.env.TELEGRAM_BOT_TOKEN!
 if (!token) {
   console.error('ERROR: TELEGRAM_BOT_TOKEN is not set in environment or .env.local')
   process.exit(1)
@@ -55,11 +55,28 @@ async function poll() {
   setTimeout(poll, 500)
 }
 
-console.log('----------------------------------------------------')
-console.log('Starting local Telegram Bot polling loop...')
-console.log(`Using Bot Token: ${token.substring(0, 8)}...${token.substring(token.length - 4)}`)
-console.log('Send files or /start commands in Telegram to test.')
-console.log('Press Ctrl+C to exit.')
-console.log('----------------------------------------------------')
+async function start() {
+  console.log('----------------------------------------------------')
+  console.log('Starting local Telegram Bot polling loop...')
+  console.log(`Using Bot Token: ${token.substring(0, 8)}...${token.substring(token.length - 4)}`)
+  console.log('Send files or /start commands in Telegram to test.')
+  console.log('Press Ctrl+C to exit.')
+  console.log('----------------------------------------------------')
 
-poll()
+  try {
+    console.log('[Telegram Bot] Deleting active webhook to enable polling...')
+    const res = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`)
+    const data = await res.json()
+    if (data.ok) {
+      console.log('[Telegram Bot] Webhook deleted successfully.')
+    } else {
+      console.warn('[Telegram Bot] Failed to delete webhook:', data.description)
+    }
+  } catch (err) {
+    console.error('[Telegram Bot] Error deleting webhook:', err)
+  }
+
+  poll()
+}
+
+start()

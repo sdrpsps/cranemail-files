@@ -3,7 +3,9 @@ import { SmarterMailClient } from './smartermail'
 import { decrypt } from './crypto'
 import crypto from 'crypto'
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+function getBotToken() {
+  return process.env.TELEGRAM_BOT_TOKEN
+}
 
 export interface TelegramUser {
   id: number
@@ -87,12 +89,13 @@ export const botMainMenu = {
  * Sends a text message to a specific Telegram chat.
  */
 export async function sendTelegramMessage(chatId: number | string, text: string, replyMarkup?: any) {
-  if (!BOT_TOKEN) {
+  const token = getBotToken()
+  if (!token) {
     console.error('TELEGRAM_BOT_TOKEN is not configured.')
     return
   }
   try {
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -115,7 +118,8 @@ export async function sendTelegramMessage(chatId: number | string, text: string,
  * Core entrypoint to handle incoming Telegram updates (via webhook or polling).
  */
 export async function handleTelegramUpdate(update: TelegramUpdate) {
-  if (!BOT_TOKEN) {
+  const token = getBotToken()
+  if (!token) {
     console.error('TELEGRAM_BOT_TOKEN is not configured.')
     return
   }
@@ -138,7 +142,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
     const isAllowed =
       allowedUsers.includes(String(fromId)) ||
       (fromUsername && allowedUsers.includes(fromUsername.toLowerCase()))
-    
+
     if (!isAllowed) {
       await sendTelegramMessage(
         chatId,
@@ -257,14 +261,14 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
       // Decrypt password to authenticate session
       const password = decrypt(user.encryptedPassword)
       const client = new SmarterMailClient(user.serverUrl)
-      
+
       const authResult = await client.authenticateUser(user.email, password)
       if (!authResult.success || !authResult.accessToken) {
         throw new Error(authResult.message || 'SmarterMail authentication failed.')
       }
 
       // Fetch file path info from Telegram
-      const tgFileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`)
+      const tgFileRes = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`)
       const tgFileInfo = await tgFileRes.json()
 
       if (!tgFileInfo.ok || !tgFileInfo.result?.file_path) {
@@ -272,9 +276,9 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
       }
 
       const filePath = tgFileInfo.result.file_path
-      
+
       // Download file bytes from Telegram
-      const tgDownRes = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`)
+      const tgDownRes = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`)
       if (!tgDownRes.ok) {
         throw new Error('Failed to download file from Telegram servers.')
       }
@@ -382,7 +386,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
           const sizeMb = ((row.size || 0) / (1024 * 1024)).toFixed(2)
           const sourceIcon = row.source === 'telegram' ? '🤖' : '💻'
           responseText += `${index + 1}. <b>${row.fileName}</b> (${sizeMb} MB) ${sourceIcon}\n`
-          responseText += `🔗 <a href="${row.publicLink}">${row.publicLink}</a>\n`
+          responseText += `🔗 <a href="${`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${row.publicLink}`}">${`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${row.publicLink}`}</a>\n`
           responseText += `📅 <i>${dateStr}</i>\n\n`
         })
 

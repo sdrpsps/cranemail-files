@@ -24,10 +24,12 @@ export interface SmarterMailRefreshResponse {
 export interface SmarterMailUserResponse {
   success: boolean
   message?: string
-  // Settings/User returns full profile, let's capture the core fields
-  emailAddress?: string
-  username?: string
-  displayName?: string
+  userData?: {
+    emailAddress?: string
+    userName?: string
+    fullName?: string
+    [key: string]: any
+  }
 }
 
 export interface SmarterMailUploadFileMeta {

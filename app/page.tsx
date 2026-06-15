@@ -438,17 +438,16 @@ export default function Home() {
               {/* Web Direct Upload Panel */}
               <div className="bg-zinc-950/40 rounded-xl p-4 border border-zinc-800/40 flex flex-col space-y-3">
                 <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Web Direct Upload</span>
-                
+
                 <div
                   onDragEnter={handleDrag}
                   onDragOver={handleDrag}
                   onDragLeave={handleDrag}
                   onDrop={handleDrop}
-                  className={`relative border-2 border-dashed rounded-xl p-6 transition-all flex flex-col items-center justify-center text-center cursor-pointer ${
-                    isDragActive
-                      ? 'border-blue-500 bg-blue-500/5'
-                      : 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/10'
-                  }`}
+                  className={`relative border-2 border-dashed rounded-xl p-6 transition-all flex flex-col items-center justify-center text-center cursor-pointer ${isDragActive
+                    ? 'border-blue-500 bg-blue-500/5'
+                    : 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/10'
+                    }`}
                 >
                   <input
                     type="file"
@@ -457,7 +456,7 @@ export default function Home() {
                     onChange={handleFileChange}
                     disabled={uploading}
                   />
-                  
+
                   {uploading ? (
                     <div className="flex flex-col items-center space-y-2">
                       <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
@@ -525,10 +524,10 @@ export default function Home() {
                           <div className="flex items-center space-x-3 min-w-0 flex-1 mr-3">
                             {/\.(jpg|jpeg|png|gif|webp)$/i.test(image.fileName) ? (
                               <img
-                                src={image.publicLink}
+                                src={`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${image.publicLink}`}
                                 alt={image.fileName}
                                 className="w-12 h-12 object-cover rounded-lg border border-zinc-800 bg-zinc-950 flex-shrink-0 cursor-zoom-in hover:scale-105 transition-transform duration-200"
-                                onClick={() => window.open(image.publicLink, '_blank')}
+                                onClick={() => window.open(`${process.env.NEXT_PUBLIC_SMARTERMAIL_URL}/${image.publicLink}`, '_blank')}
                               />
                             ) : (
                               <div className="w-12 h-12 bg-zinc-950 border border-zinc-800 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -851,13 +850,12 @@ export default function Home() {
       )}
       {/* Toast Notification Container */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border transition-all duration-300 transform translate-y-0 scale-100 flex items-center space-x-2.5 animate-[fadeIn_0.2s_ease-out] ${
-          toast.type === 'error'
-            ? 'bg-red-950/80 border-red-900/60 text-red-300 backdrop-blur-md'
-            : toast.type === 'info'
+        <div className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border transition-all duration-300 transform translate-y-0 scale-100 flex items-center space-x-2.5 animate-[fadeIn_0.2s_ease-out] ${toast.type === 'error'
+          ? 'bg-red-950/80 border-red-900/60 text-red-300 backdrop-blur-md'
+          : toast.type === 'info'
             ? 'bg-blue-950/80 border-blue-900/60 text-blue-300 backdrop-blur-md'
             : 'bg-emerald-950/80 border-emerald-900/60 text-emerald-300 backdrop-blur-md'
-        }`}>
+          }`}>
           {toast.type === 'error' ? (
             <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />

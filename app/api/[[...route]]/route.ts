@@ -160,9 +160,10 @@ app.get('/auth/me', async (c) => {
 
   try {
     const userSettings = await client.getUserSettings(accessToken)
-    if (userSettings && userSettings.success !== false && userSettings.emailAddress) {
-      const emailAddress = userSettings.emailAddress
-      const username = userSettings.username || emailAddress.split('@')[0]
+    const userData = userSettings?.userData
+    if (userSettings && userSettings.success !== false && userData?.emailAddress) {
+      const emailAddress = userData.emailAddress
+      const username = userData.userName || emailAddress.split('@')[0]
 
       // Check if Telegram is bound in DB
       const userCheck = await db.execute({
@@ -198,12 +199,12 @@ app.post('/auth/logout', (c) => {
 
 // POST /api/auth/telegram/bind-token
 app.post('/auth/telegram/bind-token', async (c) => {
-  const accessToken = getCookie(c, 'sm_access_token')
-  const serverUrl = getCookie(c, 'sm_server_url')
-
-  if (!accessToken || !serverUrl) {
+  const authContext = await getValidAccessToken(c)
+  if (!authContext) {
     return apiError(c, 'Not authenticated', 401)
   }
+
+  const { accessToken, serverUrl } = authContext
 
   try {
     const { password } = await c.req.json()
@@ -215,10 +216,11 @@ app.post('/auth/telegram/bind-token', async (c) => {
     
     // 1. Fetch current email
     const userSettings = await client.getUserSettings(accessToken)
-    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+    const userData = userSettings?.userData
+    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
       return apiError(c, 'Failed to fetch user email context', 401)
     }
-    const email = userSettings.emailAddress
+    const email = userData.emailAddress
 
     // 2. Validate password against SmarterMail
     const verifyAuth = await client.authenticateUser(email, password)
@@ -280,10 +282,11 @@ app.post('/upload', async (c) => {
 
     // Fetch email address of the current user to tag database records
     const userSettings = await client.getUserSettings(accessToken)
-    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+    const userData = userSettings?.userData
+    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
       return apiError(c, 'Failed to fetch user email context', 401)
     }
-    const email = userSettings.emailAddress
+    const email = userData.emailAddress
 
     // 1. Upload to SmarterMail storage
     const uploadResult = await client.uploadFile(accessToken, fileBuffer, fileName, folderPath)
@@ -343,10 +346,11 @@ app.get('/images', async (c) => {
 
   try {
     const userSettings = await client.getUserSettings(accessToken)
-    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+    const userData = userSettings?.userData
+    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
       return apiError(c, 'Failed to fetch user email context', 401)
     }
-    const email = userSettings.emailAddress
+    const email = userData.emailAddress
 
     const result = await db.execute({
       sql: 'SELECT * FROM uploaded_images WHERE email = ? ORDER BY createdAt DESC',
@@ -379,10 +383,11 @@ app.delete('/images/:id', async (c) => {
     }
 
     const userSettings = await client.getUserSettings(accessToken)
-    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+    const userData = userSettings?.userData
+    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
       return apiError(c, 'Failed to fetch user email context', 401)
     }
-    const email = userSettings.emailAddress
+    const email = userData.emailAddress
 
     // Check if the image belongs to this user
     const checkRes = await db.execute({
@@ -420,10 +425,11 @@ app.post('/images/sync', async (c) => {
 
   try {
     const userSettings = await client.getUserSettings(accessToken)
-    if (!userSettings || userSettings.success === false || !userSettings.emailAddress) {
+    const userData = userSettings?.userData
+    if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
       return apiError(c, 'Failed to fetch user email context', 401)
     }
-    const email = userSettings.emailAddress
+    const email = userData.emailAddress
 
     let syncedCount = 0
 
