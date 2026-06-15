@@ -155,6 +155,199 @@ Build the project:
 npm run build
 ```
 
+## Deployment
+
+This production flow assumes Vercel for hosting, Turso for the libSQL database, and Telegram Bot API webhooks for bot updates.
+
+### 1. Prepare Production Values
+
+Choose the production domain first. It can be either a Vercel domain or your custom domain:
+
+```text
+https://your-domain.example
+```
+
+Generate a stable encryption key before the first deployment:
+
+```bash
+openssl rand -hex 32
+```
+
+Keep this value. Do not rotate `ENCRYPTION_KEY` casually because existing encrypted bot credentials cannot be decrypted after it changes unless users re-bind.
+
+### 2. Create a Turso Database
+
+Open the Turso dashboard:
+
+```text
+https://app.turso.tech
+```
+
+Create a database from the dashboard:
+
+1. Click `Create Database`.
+2. Name it, for example `cranemail-images`.
+3. Choose a region close to your Vercel deployment or primary users.
+4. Create the database.
+
+Open the database page and copy the database URL. It should look like:
+
+```env
+TURSO_DATABASE_URL=libsql://...
+```
+
+Then create a database token from the dashboard:
+
+1. Open the database settings or tokens page.
+2. Create a new token for the app.
+3. Copy the token once it is shown.
+
+Use these values for Vercel:
+
+```env
+TURSO_DATABASE_URL=libsql://...
+TURSO_AUTH_TOKEN=...
+```
+
+The app creates the required `users`, `bind_tokens`, and `uploaded_images` tables automatically on startup. There is no separate migration command.
+
+### 3. Create a Telegram Bot
+
+In Telegram, open `@BotFather` and run:
+
+```text
+/newbot
+```
+
+Follow BotFather's prompts, then keep:
+
+- Bot token, used as `TELEGRAM_BOT_TOKEN`
+- Bot username, used as `TELEGRAM_BOT_USERNAME`
+
+Example:
+
+```env
+TELEGRAM_BOT_TOKEN=123456789:...
+TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+```
+
+If the bot should only work for specific Telegram accounts, set:
+
+```env
+ALLOWED_TELEGRAM_USERS=123456789,some_username
+```
+
+This value accepts comma-separated Telegram numeric user IDs or usernames.
+
+### 4. Deploy to Vercel
+
+Push the repository to GitHub, then create a Vercel project from that repository.
+
+Use these project settings:
+
+- Framework Preset: `Next.js`
+- Install Command: `npm install`
+- Build Command: `npm run build`
+- Output Directory: leave the Vercel default
+
+Configure these Vercel environment variables for `Production`:
+
+```env
+NEXT_PUBLIC_SITE_URL=https://your-domain.example
+NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
+SMARTERMAIL_CLIENT_ID=cranemail-images-app
+PUBLIC_FOLDER=/public
+TIMEZONE=Asia/Shanghai
+
+ENCRYPTION_KEY=your-stable-random-secret
+
+TELEGRAM_BOT_TOKEN=123456789:...
+TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+ALLOWED_TELEGRAM_USERS=
+
+TURSO_DATABASE_URL=libsql://...
+TURSO_AUTH_TOKEN=...
+```
+
+Redeploy after adding or changing environment variables. Vercel deployments do not automatically pick up environment variable changes made after a deployment has already been built.
+
+Production must use Turso. Do not rely on the local `local.db` fallback on Vercel because serverless filesystem state is not a durable database.
+
+### 5. Register the Telegram Webhook
+
+After the Vercel deployment is live, register the webhook with the production URL:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
+```
+
+Verify it:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+```
+
+The response should include:
+
+```json
+{
+  "ok": true,
+  "result": {
+    "url": "https://your-domain.example/api/telegram/webhook"
+  }
+}
+```
+
+If `url` is empty, points to a local tunnel, points to another deployment, or `last_error_message` reports delivery failures, run `setWebhook` again with the correct production URL.
+
+Important: `npm run dev:bot` deletes the active Telegram webhook before it starts polling with `getUpdates`. After local bot debugging, always re-register the production webhook.
+
+### 6. Verify the Deployment
+
+Open the production site:
+
+```text
+https://your-domain.example
+```
+
+Then verify the main flows:
+
+1. Sign in with a CraneMail account.
+2. Open `/upload`.
+3. Upload a small image from the web dashboard.
+4. Generate a Telegram binding token.
+5. Open the generated Telegram bot link and send `/start <token>`.
+6. Confirm the bot replies with a successful binding message.
+7. Send a photo to the bot and confirm it returns a CraneMail public link.
+
+In Vercel logs, Telegram activity should show requests to:
+
+```text
+POST /api/telegram/webhook
+```
+
+### 7. Deployment Troubleshooting
+
+If Telegram binding does nothing:
+
+- Run `getWebhookInfo` and confirm `url` points to the Vercel production endpoint.
+- Confirm `TELEGRAM_BOT_TOKEN` is set in Vercel `Production`.
+- Confirm you redeployed after changing Vercel environment variables.
+- Check Vercel function logs for `POST /api/telegram/webhook`.
+- If you ran `npm run dev:bot`, re-run `setWebhook`.
+
+If binding tokens are generated but Telegram says they are invalid:
+
+- Confirm the Vercel app is using the same Turso database that created the `bind_tokens` row.
+- Confirm `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are set in `Production`.
+- Generate a fresh binding token; tokens expire after 10 minutes.
+
+If the bot can bind but cannot upload:
+
+- Confirm the user's CraneMail credentials were recently verified through the web binding flow.
+- Confirm `PUBLIC_FOLDER` exists or can be created by the app.
+- Check Vercel logs for SmarterMail API errors.
+
 ## Database
 
 The app initializes these tables automatically:
@@ -218,11 +411,25 @@ Webhook endpoint:
 /api/telegram/webhook
 ```
 
-For a deployed app, register it with Telegram:
+For a deployed app, register the production webhook with Telegram:
 
 ```bash
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
 ```
+
+Verify that Telegram is pointing to the deployed app:
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+```
+
+The `url` field should be your production endpoint:
+
+```text
+https://your-domain.example/api/telegram/webhook
+```
+
+If `url` is empty, points to another domain, or `last_error_message` reports delivery failures, re-run `setWebhook` with the correct production URL. After using `npm run dev:bot`, you must also re-register the production webhook because the local polling script deletes the active webhook before calling `getUpdates`.
 
 For local development, expose your local server with a tunnel such as ngrok or Cloudflare Tunnel, then register the tunnel URL.
 

@@ -155,6 +155,199 @@ http://localhost:3000
 npm run build
 ```
 
+## 部署流程
+
+以下生产部署流程默认使用 Vercel 托管应用、Turso 作为 libSQL 数据库，并通过 Telegram Bot API webhook 接收 bot 消息。
+
+### 1. 准备生产环境参数
+
+先确定生产环境域名。可以使用 Vercel 默认域名，也可以使用自定义域名：
+
+```text
+https://your-domain.example
+```
+
+首次部署前生成一个稳定的加密密钥：
+
+```bash
+openssl rand -hex 32
+```
+
+请保存好这个值。不要随意轮换 `ENCRYPTION_KEY`，因为它变更后，已有的 bot 加密凭据将无法解密，除非用户重新绑定。
+
+### 2. 创建 Turso 数据库
+
+打开 Turso Dashboard：
+
+```text
+https://app.turso.tech
+```
+
+在 Dashboard 中创建数据库：
+
+1. 点击 `Create Database`。
+2. 填写数据库名称，例如 `cranemail-images`。
+3. 选择靠近 Vercel 部署区域或主要用户的 region。
+4. 创建数据库。
+
+打开数据库页面并复制 database URL，格式类似：
+
+```env
+TURSO_DATABASE_URL=libsql://...
+```
+
+然后在 Dashboard 中创建 database token：
+
+1. 打开该数据库的 settings 或 tokens 页面。
+2. 为应用创建一个新的 token。
+3. token 显示后立即复制保存。
+
+把这两个值配置到 Vercel：
+
+```env
+TURSO_DATABASE_URL=libsql://...
+TURSO_AUTH_TOKEN=...
+```
+
+应用启动时会自动创建所需的 `users`、`bind_tokens` 和 `uploaded_images` 表，不需要单独执行 migration 命令。
+
+### 3. 创建 Telegram Bot
+
+在 Telegram 中打开 `@BotFather`，执行：
+
+```text
+/newbot
+```
+
+按 BotFather 提示创建 bot，然后保存：
+
+- Bot token，对应 `TELEGRAM_BOT_TOKEN`
+- Bot username，对应 `TELEGRAM_BOT_USERNAME`
+
+例如：
+
+```env
+TELEGRAM_BOT_TOKEN=123456789:...
+TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+```
+
+如果只允许特定 Telegram 账号使用 bot，可以配置：
+
+```env
+ALLOWED_TELEGRAM_USERS=123456789,some_username
+```
+
+这个值支持逗号分隔的 Telegram numeric user ID 或 username。
+
+### 4. 部署到 Vercel
+
+把仓库推送到 GitHub，然后在 Vercel 中从该仓库创建项目。
+
+项目设置建议如下：
+
+- Framework Preset: `Next.js`
+- Install Command: `npm install`
+- Build Command: `npm run build`
+- Output Directory: 保持 Vercel 默认值
+
+在 Vercel 中为 `Production` 配置这些环境变量：
+
+```env
+NEXT_PUBLIC_SITE_URL=https://your-domain.example
+NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
+SMARTERMAIL_CLIENT_ID=cranemail-images-app
+PUBLIC_FOLDER=/public
+TIMEZONE=Asia/Shanghai
+
+ENCRYPTION_KEY=your-stable-random-secret
+
+TELEGRAM_BOT_TOKEN=123456789:...
+TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+ALLOWED_TELEGRAM_USERS=
+
+TURSO_DATABASE_URL=libsql://...
+TURSO_AUTH_TOKEN=...
+```
+
+添加或修改环境变量后需要重新部署。Vercel 已经构建完成的部署不会自动使用之后才修改的环境变量。
+
+生产环境必须使用 Turso。不要在 Vercel 上依赖本地 `local.db` fallback，因为 serverless 文件系统不是可靠的持久数据库。
+
+### 5. 注册 Telegram Webhook
+
+Vercel 部署可访问后，用生产环境 URL 注册 webhook：
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
+```
+
+检查 webhook 是否正确：
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+```
+
+返回中应包含：
+
+```json
+{
+  "ok": true,
+  "result": {
+    "url": "https://your-domain.example/api/telegram/webhook"
+  }
+}
+```
+
+如果 `url` 为空、指向了本地 tunnel、指向了其他部署，或 `last_error_message` 显示投递失败，请用正确的生产环境 URL 重新执行 `setWebhook`。
+
+注意：`npm run dev:bot` 启动本地 polling 前会删除当前 Telegram webhook。完成本地 bot 调试后，一定要重新注册生产环境 webhook。
+
+### 6. 验证部署
+
+打开生产站点：
+
+```text
+https://your-domain.example
+```
+
+按顺序验证主要流程：
+
+1. 使用 CraneMail 账号登录。
+2. 打开 `/upload`。
+3. 从 Web dashboard 上传一张小图片。
+4. 生成 Telegram 绑定 token。
+5. 打开生成的 Telegram bot 链接，并发送 `/start <token>`。
+6. 确认 bot 返回绑定成功消息。
+7. 给 bot 发送一张照片，确认它返回 CraneMail 公开链接。
+
+Vercel logs 中应该能看到 Telegram 请求：
+
+```text
+POST /api/telegram/webhook
+```
+
+### 7. 部署排查
+
+如果 Telegram 绑定没有任何反应：
+
+- 执行 `getWebhookInfo`，确认 `url` 指向 Vercel 生产环境 endpoint。
+- 确认 Vercel `Production` 中配置了 `TELEGRAM_BOT_TOKEN`。
+- 确认修改 Vercel 环境变量后已经重新部署。
+- 查看 Vercel function logs 是否出现 `POST /api/telegram/webhook`。
+- 如果跑过 `npm run dev:bot`，重新执行 `setWebhook`。
+
+如果能生成绑定 token，但 Telegram 提示 token 无效：
+
+- 确认 Vercel 应用使用的是生成 `bind_tokens` 的同一个 Turso 数据库。
+- 确认 `TURSO_DATABASE_URL` 和 `TURSO_AUTH_TOKEN` 配置在 `Production` 环境。
+- 重新生成绑定 token；token 会在 10 分钟后过期。
+
+如果 bot 可以绑定但不能上传：
+
+- 确认用户最近通过 Web 绑定流程验证过 CraneMail 凭据。
+- 确认 `PUBLIC_FOLDER` 存在，或应用有权限创建该目录。
+- 查看 Vercel logs 中的 SmarterMail API 错误。
+
 ## 数据库
 
 应用会自动初始化以下表：
@@ -218,11 +411,25 @@ Webhook endpoint:
 /api/telegram/webhook
 ```
 
-部署后，用 Telegram 注册 webhook：
+部署后，需要向 Telegram 注册生产环境 webhook：
 
 ```bash
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
 ```
+
+确认 Telegram 当前指向的是已部署应用：
+
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+```
+
+返回中的 `url` 字段应为生产环境 endpoint：
+
+```text
+https://your-domain.example/api/telegram/webhook
+```
+
+如果 `url` 为空、指向了其他域名，或 `last_error_message` 显示投递失败，请用正确的生产环境 URL 重新执行 `setWebhook`。使用 `npm run dev:bot` 后也必须重新注册生产 webhook，因为本地 polling 脚本会先删除当前 webhook，再调用 `getUpdates`。
 
 本地开发时，可以用 ngrok 或 Cloudflare Tunnel 暴露本地服务，再注册 tunnel URL。
 
