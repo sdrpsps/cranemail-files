@@ -2,8 +2,12 @@
 
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { AlertCircle, CheckCircle2, LoaderCircle, Send, X } from 'lucide-react'
 
 import type { BindData } from '@/app/types/app'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 
 interface TelegramBindModalProps {
   onClose: () => void
@@ -49,16 +53,16 @@ export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModa
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-md rounded-3xl border border-zinc-800/85 bg-zinc-950 p-6 shadow-2xl">
-        <button
+      <Card className="relative w-full max-w-md rounded-3xl border-zinc-800/85 bg-zinc-950 p-6 py-6 text-zinc-100 shadow-2xl">
+        <Button
           onClick={onClose}
-          className="absolute right-4 top-4 text-zinc-500 transition-colors hover:text-zinc-300 focus:outline-none"
+          variant="ghost"
+          size="icon"
+          className="absolute right-4 top-4 text-zinc-500 hover:text-zinc-300"
           aria-label="Close"
         >
-          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+          <X className="h-6 w-6" />
+        </Button>
 
         {!bindData ? (
           <form onSubmit={handleGenerateBindLink} className="space-y-4">
@@ -69,14 +73,7 @@ export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModa
 
             {bindError && (
               <div className="flex items-start space-x-2 rounded-xl border border-red-900/40 bg-red-950/20 p-3 text-xs text-red-400">
-                <svg className="mt-0.5 h-4.5 w-4.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
+                <AlertCircle className="mt-0.5 h-4.5 w-4.5 flex-shrink-0" />
                 <span>{bindError}</span>
               </div>
             )}
@@ -85,31 +82,31 @@ export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModa
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-400" htmlFor="bind-password">
                 Enter Cranemail Password
               </label>
-              <input
+              <Input
                 id="bind-password"
                 type="password"
                 required
                 placeholder="••••••••••••"
                 value={bindPassword}
                 onChange={(e) => setBindPassword(e.target.value)}
-                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 transition-all focus:border-blue-500/80 focus:outline-none"
+                className="h-11 rounded-xl border-zinc-800 bg-zinc-900/60 px-4 py-3 text-zinc-100 placeholder:text-zinc-600 focus-visible:border-blue-500/80"
               />
             </div>
 
-            <button
+            <Button
               type="submit"
               disabled={bindLoading}
-              className="mt-4 flex w-full cursor-pointer items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-medium text-white transition-all active:scale-[0.98]"
+              className="mt-4 h-11 w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500"
             >
               {bindLoading ? (
                 <>
-                  <span className="h-4.5 w-4.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  <LoaderCircle className="h-4.5 w-4.5 animate-spin" />
                   <span>Verifying...</span>
                 </>
               ) : (
                 <span>Generate Binding Token</span>
               )}
-            </button>
+            </Button>
           </form>
         ) : (
           <div className="space-y-5 text-center">
@@ -145,24 +142,28 @@ export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModa
                 href={bindData.bindUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex w-full cursor-pointer items-center justify-center space-x-2 rounded-xl bg-[#2ea6da] py-3 text-sm font-medium text-white shadow-lg shadow-sky-500/10 transition-all hover:bg-[#2794c4] active:scale-[0.98]"
+                className={buttonVariants({
+                  variant: 'default',
+                  size: 'lg',
+                  className: 'h-11 w-full bg-[#2ea6da] text-white shadow-lg shadow-sky-500/10 hover:bg-[#2794c4]',
+                })}
               >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.11.02-1.93 1.23-5.46 3.62-.51.35-.98.53-1.39.52-.46-.01-1.33-.26-1.98-.48-.8-.27-1.43-.42-1.37-.89.03-.25.38-.51 1.03-.78 4.04-1.76 6.74-2.92 8.1-3.48 3.85-1.6 4.64-1.88 5.17-1.89.11 0 .37.03.54.17.14.12.18.28.2.45-.02.07-.02.16-.03.22z" />
-                </svg>
+                <Send className="h-5 w-5" />
                 <span>Launch Telegram Bot</span>
               </a>
 
-              <button
+              <Button
                 onClick={onRefreshStatus}
-                className="flex w-full cursor-pointer items-center justify-center space-x-2 rounded-xl border border-zinc-700/60 bg-zinc-800 py-3 text-sm font-medium text-zinc-200 transition-all hover:bg-zinc-700 active:scale-[0.98]"
+                variant="secondary"
+                className="h-11 w-full border border-zinc-700/60 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
               >
+                <CheckCircle2 className="h-4 w-4" />
                 <span>I Have Completed Binding</span>
-              </button>
+              </Button>
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   )
 }

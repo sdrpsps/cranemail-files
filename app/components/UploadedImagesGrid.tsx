@@ -1,8 +1,11 @@
 'use client'
 
 import Image from 'next/image'
+import { Copy, ExternalLink, FileText, ImageIcon, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 
 import type { UploadedImage } from '@/app/types/app'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 
 interface UploadedImagesGridProps {
   images: UploadedImage[]
@@ -80,50 +83,45 @@ export function UploadedImagesGrid({
   onDeleteImage,
 }: UploadedImagesGridProps) {
   return (
-    <section className="space-y-3 rounded-xl border border-zinc-800/40 bg-zinc-950/40 p-4">
+    <Card className="space-y-3 border-zinc-800/80 bg-zinc-950/70 p-4 py-4 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Uploaded History ({images.length})</p>
         <div className="flex items-center space-x-2">
-          <button
+          <Button
             onClick={onSyncWorkspace}
             disabled={syncing || imagesLoading}
-            className="flex cursor-pointer select-none items-center space-x-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-1 text-[10px] font-medium text-zinc-300 transition-all hover:bg-zinc-900 hover:text-white disabled:opacity-50"
+            variant="outline"
+            size="xs"
+            className="border-zinc-800 bg-zinc-950/60 text-[10px] text-zinc-300 hover:bg-zinc-900 hover:text-white"
             title="Sync existing images from your SmarterMail storage folders"
           >
             {syncing ? (
               <>
-                <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-500/30 border-t-purple-500" />
+                <LoaderCircle className="h-3 w-3 animate-spin text-purple-400" />
                 <span>Syncing...</span>
               </>
             ) : (
               <>
-                <svg className="h-3 w-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L21 4"
-                  />
-                </svg>
+                <RefreshCw className="h-3 w-3 text-purple-400" />
                 <span>Sync Workspace</span>
               </>
             )}
-          </button>
-          {imagesLoading && !syncing && <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500/30 border-t-blue-500" />}
+          </Button>
+          {imagesLoading && !syncing && <LoaderCircle className="h-4 w-4 animate-spin text-blue-500" />}
         </div>
       </div>
 
       {imagesError && <p className="text-xs text-red-400">{imagesError}</p>}
 
       {images.length > 0 ? (
-        <div className="grid max-h-[520px] grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3 overflow-y-auto pr-1">
+        <div className="grid max-h-[520px] grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3 overflow-y-auto rounded-xl bg-black/20 p-2 pr-1 ring-1 ring-zinc-900/80">
           {images.map((image) => {
             const publicUrl = getPublicUrl(image.publicLink)
 
             return (
-              <article
+              <Card
                 key={image.id}
-                className="flex min-w-0 flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 text-xs transition-all duration-200 hover:border-zinc-700"
+                className="flex min-w-0 flex-col gap-3 border-zinc-800/90 bg-zinc-900/75 p-3 py-3 text-xs shadow-[0_10px_24px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.03)] transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900/95 hover:shadow-[0_14px_30px_rgba(0,0,0,0.34)]"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   {isPreviewable(image.fileName) ? (
@@ -132,19 +130,12 @@ export function UploadedImagesGrid({
                       alt={image.fileName}
                       width={64}
                       height={64}
-                      className="h-16 w-16 flex-shrink-0 cursor-zoom-in rounded-lg border border-zinc-800 bg-zinc-950 object-cover transition-transform duration-200 hover:scale-105"
+                      className="h-16 w-16 flex-shrink-0 cursor-zoom-in rounded-lg border border-zinc-700/80 bg-zinc-950 object-cover shadow-[0_6px_16px_rgba(0,0,0,0.32)] transition-transform duration-200 hover:scale-105"
                       onClick={() => window.open(publicUrl, '_blank')}
                     />
                   ) : (
-                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950">
-                      <svg className="h-5 w-5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
+                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-[0_6px_16px_rgba(0,0,0,0.32)]">
+                      <FileText className="h-5 w-5 text-zinc-500" />
                     </div>
                   )}
 
@@ -152,8 +143,8 @@ export function UploadedImagesGrid({
                     <p className="truncate font-medium text-zinc-200" title={image.fileName}>
                       {image.fileName}
                     </p>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-mono text-[10px] text-zinc-500">{formatSize(image.size)}</span>
+                    <p className="font-mono text-[10px] text-zinc-500">{formatSize(image.size)}</p>
+                    <div className="flex items-center gap-2">
                       <span className="font-mono text-[10px] text-zinc-500">{formatDate(image.createdAt)}</span>
                       <SourceBadge source={image.source} />
                     </div>
@@ -165,65 +156,50 @@ export function UploadedImagesGrid({
                     href={publicUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-1.5 text-zinc-400 transition-all hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100"
+                    className={buttonVariants({
+                      variant: 'outline',
+                      size: 'icon-xs',
+                      className: 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100',
+                    })}
                     title="Open Link"
                   >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
+                    <ExternalLink className="h-4 w-4" />
                   </a>
-                  <button
+                  <Button
                     onClick={() => onCopyLink(image.publicLink)}
-                    className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-1.5 text-zinc-400 transition-all hover:border-zinc-700 hover:bg-zinc-800 hover:text-blue-400"
+                    variant="outline"
+                    size="icon-xs"
+                    className="border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-blue-400"
                     title="Copy Direct Link"
                   >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"
-                      />
-                    </svg>
-                  </button>
-                  <button
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
                     onClick={() => onDeleteImage(image.id)}
                     disabled={deletingIds.has(image.id)}
-                    className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-1.5 text-zinc-400 transition-all hover:border-red-900/40 hover:bg-red-950/40 hover:text-red-400 disabled:opacity-50"
+                    variant="destructive"
+                    size="icon-xs"
+                    className="border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-red-900/40 hover:bg-red-950/40 hover:text-red-400"
                     title="Delete Record"
                   >
                     {deletingIds.has(image.id) ? (
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-500/30 border-t-red-500" />
+                      <LoaderCircle className="h-4 w-4 animate-spin text-red-400" />
                     ) : (
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
+                      <Trash2 className="h-4 w-4" />
                     )}
-                  </button>
+                  </Button>
                 </div>
-              </article>
+              </Card>
             )
           })}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-950/20 py-6 text-center">
-          <svg className="mb-2 h-7 w-7 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-black/25 py-6 text-center">
+          <ImageIcon className="mb-2 h-7 w-7 text-zinc-600" />
           <p className="text-[11px] text-zinc-500">No images uploaded yet.</p>
           <p className="mt-0.5 text-[9px] text-zinc-600">Drag & drop files above to start.</p>
         </div>
       )}
-    </section>
+    </Card>
   )
 }

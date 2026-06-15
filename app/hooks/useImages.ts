@@ -2,14 +2,25 @@
 
 import { useCallback, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
+import { toast } from 'sonner'
 
-import type { UploadedImage, ToastType } from '@/app/types/app'
+import type { UploadedImage } from '@/app/types/app'
 
-interface UseImagesOptions {
-  showToast: (message: string, type?: ToastType) => void
+function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
+  if (type === 'error') {
+    toast.error(message)
+    return
+  }
+
+  if (type === 'info') {
+    toast.info(message)
+    return
+  }
+
+  toast.success(message)
 }
 
-export function useImages({ showToast }: UseImagesOptions) {
+export function useImages() {
   const [images, setImages] = useState<UploadedImage[]>([])
   const [imagesLoading, setImagesLoading] = useState(false)
   const [imagesError, setImagesError] = useState('')
@@ -73,7 +84,7 @@ export function useImages({ showToast }: UseImagesOptions) {
         setUploading(false)
       }
     },
-    [showToast],
+    [],
   )
 
   const syncWorkspace = useCallback(async () => {
@@ -96,7 +107,7 @@ export function useImages({ showToast }: UseImagesOptions) {
     } finally {
       setSyncing(false)
     }
-  }, [fetchImages, showToast])
+  }, [fetchImages])
 
   const deleteImage = useCallback(
     async (id: string) => {
@@ -132,7 +143,7 @@ export function useImages({ showToast }: UseImagesOptions) {
         })
       }
     },
-    [showToast],
+    [],
   )
 
   const copyLink = useCallback(
@@ -140,7 +151,7 @@ export function useImages({ showToast }: UseImagesOptions) {
       await navigator.clipboard.writeText(url)
       showToast('Direct link copied to clipboard!')
     },
-    [showToast],
+    [],
   )
 
   const handleDrag = useCallback((e: DragEvent) => {

@@ -5,16 +5,13 @@ import { useRouter } from 'next/navigation'
 
 import { AppFrame } from '@/app/components/AppFrame'
 import { LoadingState } from '@/app/components/LoadingState'
-import { ToastNotification } from '@/app/components/ToastNotification'
 import { UploadDashboard } from '@/app/components/UploadDashboard'
 import { useAuthSession } from '@/app/hooks/useAuthSession'
 import { useImages } from '@/app/hooks/useImages'
-import { useToast } from '@/app/hooks/useToast'
 
 export default function UploadPage() {
   const router = useRouter()
   const { user, loading, checkSession, logout } = useAuthSession()
-  const { toast, showToast } = useToast()
   const {
     images,
     imagesLoading,
@@ -32,7 +29,7 @@ export default function UploadPage() {
     handleDrop,
     handleFileChange,
     setImages,
-  } = useImages({ showToast })
+  } = useImages()
 
   useEffect(() => {
     if (!loading && !user) {
@@ -78,7 +75,6 @@ export default function UploadPage() {
           onFileChange={handleFileChange}
         />
       )}
-      <ToastNotification toast={toast} />
     </AppFrame>
   )
 }

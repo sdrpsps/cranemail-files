@@ -18,10 +18,3 @@ export interface UploadedImage {
   source: string
   createdAt: string
 }
-
-export type ToastType = 'success' | 'error' | 'info'
-
-export interface ToastState {
-  message: string
-  type: ToastType
-}
