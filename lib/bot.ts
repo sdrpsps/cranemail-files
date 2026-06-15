@@ -281,7 +281,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
       const fileBuffer = Buffer.from(await tgDownRes.arrayBuffer())
 
-      const folderPath = SmarterMailClient.getUtc8DatePath()
+      const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getUtc8DatePath()
 
       // Upload file to SmarterMail
       const uploadResult = await client.uploadFile(authResult.accessToken, fileBuffer, fileName, folderPath)

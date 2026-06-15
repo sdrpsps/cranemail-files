@@ -158,6 +158,17 @@ export class SmarterMailClient {
   }
 
   /**
+   * Helper to get public folder path from environment variables.
+   * Defaults to '/public'. Sanitizes leading/trailing slashes.
+   */
+  static getPublicFolder(): string {
+    const folder = process.env.PUBLIC_FOLDER || '/public'
+    let sanitized = folder.startsWith('/') ? folder : '/' + folder
+    sanitized = sanitized.replace(/\/+$/, '')
+    return sanitized || '/'
+  }
+
+  /**
    * Upload a file to file storage.
    * Supports an optional folderPath. Falls back to root if the folder-based upload fails.
    */

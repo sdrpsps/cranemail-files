@@ -276,7 +276,7 @@ app.post('/upload', async (c) => {
     const fileName = file.name || `web_upload_${Date.now()}`
 
     const client = new SmarterMailClient(serverUrl)
-    const folderPath = SmarterMailClient.getUtc8DatePath()
+    const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getUtc8DatePath()
 
     // Fetch email address of the current user to tag database records
     const userSettings = await client.getUserSettings(accessToken)
@@ -501,8 +501,8 @@ app.post('/images/sync', async (c) => {
       }
     }
 
-    // Start scanning from root directory "/"
-    await walkFolder('/')
+    // Start scanning from public folder path
+    await walkFolder(SmarterMailClient.getPublicFolder())
 
     return apiSuccess(c, { syncedCount }, `Successfully synced ${syncedCount} new workspace images`)
   } catch (error) {
