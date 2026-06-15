@@ -3,10 +3,18 @@ import { handle } from 'hono/vercel'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { apiSuccess, apiError } from '@/lib/response'
-import { SmarterMailClient, SmarterMailHttpError, SmarterMailRefreshResponse } from '@/lib/smartermail'
+import { SmarterMailClient } from '@/lib/smartermail'
 import { encrypt } from '@/lib/crypto'
 import { db, initDb } from '@/lib/db'
 import { handleTelegramUpdate } from '@/lib/bot'
+import {
+  AppUser,
+  callSmarterMailForUser,
+  resolveServerUrl,
+  SmarterMailAuthContext,
+  SmarterMailSessionError,
+  upsertSmarterMailSession,
+} from '@/lib/smartermail-session'
 import nodeCrypto from 'crypto'
 
 // Initialize Hono app. Setting the basePath allows matching subroutes correctly.
@@ -51,65 +59,77 @@ const getCookieOptions = (expiresStr?: string) => ({
   sameSite: 'Lax' as const,
   ...(expiresStr ? { expires: new Date(expiresStr) } : {}),
 })
-const ACCESS_TOKEN_REFRESH_WINDOW_MS = 2 * 60 * 1000
-const refreshTokenFlights = new Map<string, Promise<SmarterMailRefreshResponse>>()
+const APP_SESSION_COOKIE = 'app_session_id'
+const APP_SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000
 
 function clearAuthCookies(c: Context) {
-  deleteCookie(c, 'sm_access_token', { path: '/' })
-  deleteCookie(c, 'sm_access_token_expires', { path: '/' })
-  deleteCookie(c, 'sm_refresh_token', { path: '/' })
-  deleteCookie(c, 'sm_server_url', { path: '/' })
+  deleteCookie(c, APP_SESSION_COOKIE, { path: '/' })
 }
 
-function setAuthCookies(
+function setAppSessionCookie(c: Context, sessionId: string, expiresAt: string) {
+  setCookie(c, APP_SESSION_COOKIE, sessionId, getCookieOptions(expiresAt))
+}
+
+async function createAppSession(userId: string): Promise<{ id: string; expiresAt: string }> {
+  const id = nodeCrypto.randomUUID()
+  const expiresAt = new Date(Date.now() + APP_SESSION_DURATION_MS).toISOString()
+
+  await db.execute({
+    sql: `INSERT INTO app_sessions (id, userId, expiresAt, updatedAt)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+    args: [id, userId, expiresAt],
+  })
+
+  return { id, expiresAt }
+}
+
+async function getCurrentUser(c: Context): Promise<AppUser | null> {
+  const sessionId = getCookie(c, APP_SESSION_COOKIE)
+  if (!sessionId) {
+    return null
+  }
+
+  const result = await db.execute({
+    sql: `SELECT users.id, users.email, users.serverUrl, users.telegramUserId, users.encryptedPassword
+          FROM app_sessions
+          JOIN users ON users.id = app_sessions.userId
+          WHERE app_sessions.id = ? AND app_sessions.expiresAt > ?
+          LIMIT 1`,
+    args: [sessionId, new Date().toISOString()],
+  })
+
+  const user = result.rows[0] as unknown as AppUser | undefined
+  if (!user) {
+    clearAuthCookies(c)
+    return null
+  }
+
+  return user
+}
+
+async function requireCurrentUser(c: Context): Promise<AppUser> {
+  const user = await getCurrentUser(c)
+  if (!user) {
+    throw new HTTPException(401, { message: 'Not authenticated' })
+  }
+
+  return user
+}
+
+async function callSmarterMail<T>(
   c: Context,
-  accessToken: string,
-  accessTokenExpiration: string,
-  refreshToken: string,
-  refreshTokenExpiration: string,
-  serverUrl: string
-) {
-  setCookie(c, 'sm_access_token', accessToken, getCookieOptions(accessTokenExpiration))
-  setCookie(c, 'sm_access_token_expires', accessTokenExpiration, getCookieOptions(accessTokenExpiration))
-  setCookie(c, 'sm_refresh_token', refreshToken, getCookieOptions(refreshTokenExpiration))
-  setCookie(c, 'sm_server_url', serverUrl, getCookieOptions(refreshTokenExpiration))
-}
+  operation: (context: SmarterMailAuthContext) => Promise<T>,
+): Promise<T> {
+  const user = await requireCurrentUser(c)
 
-function shouldRefreshAccessToken(expiresStr?: string): boolean {
-  if (!expiresStr) {
-    return false
+  try {
+    return await callSmarterMailForUser(user.id, operation)
+  } catch (err) {
+    if (err instanceof SmarterMailSessionError) {
+      throw new HTTPException(err.status === 403 ? 403 : 401, { message: err.message })
+    }
+    throw err
   }
-
-  const expiresAt = Date.parse(expiresStr)
-  if (!Number.isFinite(expiresAt)) {
-    return false
-  }
-
-  return expiresAt - Date.now() <= ACCESS_TOKEN_REFRESH_WINDOW_MS
-}
-
-function getRefreshFlightKey(serverUrl: string, refreshToken: string): string {
-  return nodeCrypto
-    .createHash('sha256')
-    .update(`${serverUrl}\0${refreshToken}`)
-    .digest('hex')
-}
-
-async function refreshSmarterMailToken(serverUrl: string, refreshToken: string): Promise<SmarterMailRefreshResponse> {
-  const key = getRefreshFlightKey(serverUrl, refreshToken)
-  const existingFlight = refreshTokenFlights.get(key)
-  if (existingFlight) {
-    return existingFlight
-  }
-
-  const flight = new SmarterMailClient(serverUrl)
-    .refreshToken(refreshToken)
-    .finally(() => {
-      refreshTokenFlights.delete(key)
-    })
-
-  refreshTokenFlights.set(key, flight)
-  return flight
 }
 
 // --- Authentication Endpoints ---
@@ -123,48 +143,42 @@ app.post('/auth/login', async (c) => {
       return apiError(c, 'Username and password are required', 400)
     }
 
-    const client = new SmarterMailClient(serverUrl)
+    const resolvedServerUrl = resolveServerUrl(serverUrl)
+    const client = new SmarterMailClient(resolvedServerUrl)
     const result = await client.authenticateUser(username, password)
 
     if (!result.success) {
       return apiError(c, result.message || 'Authentication failed', 401)
     }
 
-    const resolvedServerUrl = serverUrl || process.env.NEXT_PUBLIC_SMARTERMAIL_URL || 'https://us1.workspace.org'
-    setAuthCookies(
-      c,
-      result.accessToken,
-      result.accessTokenExpiration,
-      result.refreshToken,
-      result.refreshTokenExpiration,
-      resolvedServerUrl
-    )
-
     const encryptedPassword = encrypt(password)
+    const newUserId = nodeCrypto.randomUUID()
 
     await db.execute({
-      sql: `INSERT INTO users (id, email, serverUrl, encryptedPassword, refreshToken, updatedAt)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      sql: `INSERT INTO users (id, email, serverUrl, encryptedPassword, updatedAt)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(email) DO UPDATE SET
               serverUrl = excluded.serverUrl,
               encryptedPassword = excluded.encryptedPassword,
-              refreshToken = excluded.refreshToken,
               updatedAt = CURRENT_TIMESTAMP`,
       args: [
-        nodeCrypto.randomUUID(),
+        newUserId,
         result.emailAddress,
         resolvedServerUrl,
         encryptedPassword,
-        result.refreshToken
-      ]
+      ],
     })
 
     const userCheck = await db.execute({
-      sql: 'SELECT telegramUserId FROM users WHERE email = ? LIMIT 1',
-      args: [result.emailAddress]
+      sql: 'SELECT id, telegramUserId FROM users WHERE email = ? LIMIT 1',
+      args: [result.emailAddress],
     })
     const dbUser = userCheck.rows[0]
-    console.log(`[Auth Sync] Upserted user credentials: ${result.emailAddress}`)
+    const userId = String(dbUser.id)
+
+    await upsertSmarterMailSession(userId, result)
+    const appSession = await createAppSession(userId)
+    setAppSessionCookie(c, appSession.id, appSession.expiresAt)
 
     return apiSuccess(c, {
       username: result.username,
@@ -172,7 +186,7 @@ app.post('/auth/login', async (c) => {
       isAdmin: result.isAdmin,
       isDomainAdmin: result.isDomainAdmin,
       serverUrl: resolvedServerUrl,
-      isTelegramBound: !!(dbUser && dbUser.telegramUserId),
+      isTelegramBound: !!dbUser.telegramUserId,
     }, 'Authentication successful')
   } catch (error) {
     console.error('Login error:', error)
@@ -181,107 +195,27 @@ app.post('/auth/login', async (c) => {
   }
 })
 
-// Helper to retrieve and automatically refresh SmarterMail access token from cookies
-async function getValidAccessToken(c: Context, forceRefresh = false): Promise<{ accessToken: string; serverUrl: string } | null> {
-  const accessToken = forceRefresh ? null : getCookie(c, 'sm_access_token')
-  const accessTokenExpires = getCookie(c, 'sm_access_token_expires')
-  const refreshToken = getCookie(c, 'sm_refresh_token')
-  const serverUrl = getCookie(c, 'sm_server_url')
-
-  if (!serverUrl) return null
-
-  if (accessToken && !forceRefresh && !shouldRefreshAccessToken(accessTokenExpires)) {
-    return { accessToken, serverUrl }
-  }
-
-  if (refreshToken) {
-    try {
-      console.log('Refreshing expired SmarterMail access token in helper...')
-      const refreshResult = await refreshSmarterMailToken(serverUrl, refreshToken)
-
-      if (refreshResult.success && refreshResult.accessToken) {
-        setAuthCookies(
-          c,
-          refreshResult.accessToken,
-          refreshResult.accessTokenExpiration,
-          refreshResult.refreshToken || refreshToken,
-          refreshResult.refreshTokenExpiration,
-          serverUrl
-        )
-        return { accessToken: refreshResult.accessToken, serverUrl }
-      }
-    } catch (err) {
-      console.error('Token refresh helper failed:', err)
-      if (!(err instanceof SmarterMailHttpError) || err.status !== 401) {
-        throw err
-      }
-    }
-  }
-
-  if (accessToken && !forceRefresh) {
-    return { accessToken, serverUrl }
-  }
-
-  return null
-}
-
-// Wrapper helper to execute SmarterMail requests and automatically retry on 401
-async function callSmarterMail<T>(
-  c: Context,
-  operation: (client: SmarterMailClient, accessToken: string) => Promise<T>
-): Promise<T> {
-  let authContext = await getValidAccessToken(c)
-  if (!authContext) {
-    clearAuthCookies(c)
-    throw new HTTPException(401, { message: 'Not authenticated' })
-  }
-
-  let client = new SmarterMailClient(authContext.serverUrl)
-  try {
-    return await operation(client, authContext.accessToken)
-  } catch (err) {
-    if (err instanceof SmarterMailHttpError && err.status === 401) {
-      console.log('[SmarterMail Client] Detected 401 error. Attempting token refresh and retry...')
-      authContext = await getValidAccessToken(c, true)
-      if (authContext) {
-        client = new SmarterMailClient(authContext.serverUrl)
-        return await operation(client, authContext.accessToken)
-      }
-      clearAuthCookies(c)
-      throw new HTTPException(401, { message: 'Not authenticated' })
-    }
-    throw err
-  }
-}
-
 // GET /api/auth/me
 app.get('/auth/me', async (c) => {
   try {
-    const result = await callSmarterMail(c, async (client, accessToken) => {
+    const result = await callSmarterMail(c, async ({ client, accessToken, user }) => {
       const userSettings = await client.getUserSettings(accessToken)
       const userData = userSettings?.userData
       if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
         throw new HTTPException(401, { message: 'Not authenticated' })
       }
-      return { userData, serverUrl: getCookie(c, 'sm_server_url')! }
+      return { userData, user }
     })
 
-    const { userData, serverUrl } = result
+    const { userData, user } = result
     const emailAddress = userData.emailAddress!
     const username = userData.userName || emailAddress.split('@')[0]
-
-    // Check if Telegram is bound in DB
-    const userCheck = await db.execute({
-      sql: 'SELECT telegramUserId FROM users WHERE email = ? LIMIT 1',
-      args: [emailAddress]
-    })
-    const dbUser = userCheck.rows[0]
 
     return apiSuccess(c, {
       username,
       emailAddress,
-      serverUrl,
-      isTelegramBound: !!(dbUser && dbUser.telegramUserId),
+      serverUrl: user.serverUrl,
+      isTelegramBound: !!user.telegramUserId,
     }, 'Current user retrieved successfully')
   } catch (err) {
     console.error('getUserSettings in me failed:', err)
@@ -295,7 +229,14 @@ app.get('/auth/me', async (c) => {
 })
 
 // POST /api/auth/logout
-app.post('/auth/logout', (c) => {
+app.post('/auth/logout', async (c) => {
+  const sessionId = getCookie(c, APP_SESSION_COOKIE)
+  if (sessionId) {
+    await db.execute({
+      sql: 'DELETE FROM app_sessions WHERE id = ?',
+      args: [sessionId],
+    })
+  }
   clearAuthCookies(c)
   return apiSuccess(c, null, 'Successfully logged out')
 })
@@ -308,13 +249,13 @@ app.post('/auth/telegram/bind-token', async (c) => {
       return apiError(c, 'Password is required to confirm and link your Telegram account', 400)
     }
 
-    const { email, serverUrl } = await callSmarterMail(c, async (client, accessToken) => {
+    const { email, serverUrl, userId } = await callSmarterMail(c, async ({ client, accessToken, user }) => {
       const userSettings = await client.getUserSettings(accessToken)
       const userData = userSettings?.userData
       if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
         throw new HTTPException(401, { message: 'Failed to fetch user email context' })
       }
-      return { email: userData.emailAddress, serverUrl: getCookie(c, 'sm_server_url')! }
+      return { email: userData.emailAddress, serverUrl: user.serverUrl, userId: user.id }
     })
 
     const client = new SmarterMailClient(serverUrl)
@@ -327,47 +268,30 @@ app.post('/auth/telegram/bind-token', async (c) => {
 
     const encryptedPassword = encrypt(password)
 
-    setAuthCookies(
-      c,
-      verifyAuth.accessToken,
-      verifyAuth.accessTokenExpiration,
-      verifyAuth.refreshToken,
-      verifyAuth.refreshTokenExpiration,
-      serverUrl
-    )
-
     await db.execute({
-      sql: `INSERT INTO users (id, email, serverUrl, encryptedPassword, refreshToken, updatedAt)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(email) DO UPDATE SET
-              serverUrl = excluded.serverUrl,
-              encryptedPassword = excluded.encryptedPassword,
-              refreshToken = excluded.refreshToken,
-              updatedAt = CURRENT_TIMESTAMP`,
+      sql: `UPDATE users
+            SET encryptedPassword = ?, serverUrl = ?, updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ?`,
       args: [
-        nodeCrypto.randomUUID(),
-        email,
-        serverUrl,
         encryptedPassword,
-        verifyAuth.refreshToken
-      ]
+        serverUrl,
+        userId,
+      ],
     })
+    await upsertSmarterMailSession(userId, verifyAuth)
 
     // 3. Store bind token (expires in 10 minutes)
     const token = nodeCrypto.randomUUID()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
     await db.execute({
-      sql: `INSERT INTO bind_tokens (token, email, serverUrl, encryptedPassword, refreshToken, expiresAt)
-            VALUES (?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO bind_tokens (token, userId, expiresAt)
+            VALUES (?, ?, ?)`,
       args: [
         token,
-        email,
-        serverUrl,
-        encryptedPassword,
-        verifyAuth.refreshToken,
-        expiresAt
-      ]
+        userId,
+        expiresAt,
+      ],
     })
 
     const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'CraneMailImagesBot'
@@ -397,7 +321,7 @@ app.post('/upload', async (c) => {
     const fileBuffer = Buffer.from(await file.arrayBuffer())
     const fileName = file.name || `web_upload_${Date.now()}`
 
-    const uploadResult = await callSmarterMail(c, async (client, accessToken) => {
+    const uploadResult = await callSmarterMail(c, async ({ client, accessToken, user }) => {
       const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getDatePath()
 
       // Fetch email address of the current user to tag database records
@@ -406,7 +330,7 @@ app.post('/upload', async (c) => {
       if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
         throw new HTTPException(401, { message: 'Failed to fetch user email context' })
       }
-      const email = userData.emailAddress
+      const email = userData.emailAddress || user.email
 
       // 1. Upload to SmarterMail storage
       const uploadRes = await client.uploadFile(accessToken, fileBuffer, fileName, folderPath)
@@ -470,13 +394,13 @@ app.post('/upload', async (c) => {
 // GET /api/images
 app.get('/images', async (c) => {
   try {
-    const email = await callSmarterMail(c, async (client, accessToken) => {
+    const email = await callSmarterMail(c, async ({ client, accessToken, user }) => {
       const userSettings = await client.getUserSettings(accessToken)
       const userData = userSettings?.userData
       if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
         throw new HTTPException(401, { message: 'Failed to fetch user email context' })
       }
-      return userData.emailAddress
+      return userData.emailAddress || user.email
     })
 
     const result = await db.execute({
@@ -503,13 +427,13 @@ app.delete('/images/:id', async (c) => {
       return apiError(c, 'Image ID is required', 400)
     }
 
-    const deleteResult = await callSmarterMail(c, async (client, accessToken) => {
+    const deleteResult = await callSmarterMail(c, async ({ client, accessToken, user }) => {
       const userSettings = await client.getUserSettings(accessToken)
       const userData = userSettings?.userData
       if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
         throw new HTTPException(401, { message: 'Failed to fetch user email context' })
       }
-      const email = userData.emailAddress
+      const email = userData.emailAddress || user.email
 
       // Check if the image belongs to this user
       const checkRes = await db.execute({
@@ -559,13 +483,13 @@ app.delete('/images/:id', async (c) => {
 // POST /api/images/sync
 app.post('/images/sync', async (c) => {
   try {
-    const syncResult = await callSmarterMail(c, async (client, accessToken) => {
+    const syncResult = await callSmarterMail(c, async ({ client, accessToken, user }) => {
       const userSettings = await client.getUserSettings(accessToken)
       const userData = userSettings?.userData
       if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
         throw new HTTPException(401, { message: 'Failed to fetch user email context' })
       }
-      const email = userData.emailAddress
+      const email = userData.emailAddress || user.email
 
       let syncedCount = 0
 

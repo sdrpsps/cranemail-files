@@ -26,7 +26,6 @@ export async function initDb() {
         serverUrl TEXT,
         telegramUserId TEXT UNIQUE,
         encryptedPassword TEXT,
-        refreshToken TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
       );
@@ -35,12 +34,31 @@ export async function initDb() {
     await db.execute(`
       CREATE TABLE IF NOT EXISTS bind_tokens (
         token TEXT PRIMARY KEY,
-        email TEXT,
-        serverUrl TEXT,
-        encryptedPassword TEXT,
-        refreshToken TEXT,
+        userId TEXT NOT NULL,
         expiresAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS app_sessions (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        expiresAt TEXT NOT NULL,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS smartermail_sessions (
+        userId TEXT PRIMARY KEY,
+        accessToken TEXT,
+        accessTokenExpires TEXT,
+        refreshToken TEXT,
+        refreshTokenExpires TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `)
 

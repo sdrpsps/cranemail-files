@@ -10,7 +10,7 @@ CraneMail Images 是一个面向 CraneMail workspace 存储的轻量图片托管
 
 ## 功能
 
-- 使用 CraneMail 账号登录，并通过 access/refresh token cookie 维持会话。
+- 使用 CraneMail 账号登录，浏览器只保存应用自己的 session cookie，SmarterMail token 会加密保存在服务端。
 - 支持从 Web 页面上传图片到 CraneMail workspace 存储。
 - 上传后自动生成公开访问链接。
 - 支持同步 `PUBLIC_FOLDER` 下已有的 workspace 图片。
@@ -209,7 +209,7 @@ TURSO_DATABASE_URL=libsql://...
 TURSO_AUTH_TOKEN=...
 ```
 
-应用启动时会自动创建所需的 `users`、`bind_tokens` 和 `uploaded_images` 表，不需要单独执行 migration 命令。
+应用启动时会自动创建所需的 `users`、`app_sessions`、`smartermail_sessions`、`bind_tokens` 和 `uploaded_images` 表，不需要单独执行 migration 命令。
 
 ### 3. 创建 Telegram Bot
 
@@ -353,6 +353,8 @@ POST /api/telegram/webhook
 应用会自动初始化以下表：
 
 - `users`
+- `app_sessions`
+- `smartermail_sessions`
 - `bind_tokens`
 - `uploaded_images`
 

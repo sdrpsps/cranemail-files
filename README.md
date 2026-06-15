@@ -10,7 +10,7 @@ Compatibility note: this project is developed and tested against CraneMail, but 
 
 ## Features
 
-- Sign in with a CraneMail account and maintain sessions with access/refresh token cookies.
+- Sign in with a CraneMail account using an app session cookie while SmarterMail tokens are stored encrypted server-side.
 - Upload images from the web dashboard to CraneMail workspace storage.
 - Generate public links automatically after upload.
 - Sync existing workspace images under `PUBLIC_FOLDER`.
@@ -209,7 +209,7 @@ TURSO_DATABASE_URL=libsql://...
 TURSO_AUTH_TOKEN=...
 ```
 
-The app creates the required `users`, `bind_tokens`, and `uploaded_images` tables automatically on startup. There is no separate migration command.
+The app creates the required `users`, `app_sessions`, `smartermail_sessions`, `bind_tokens`, and `uploaded_images` tables automatically on startup. There is no separate migration command.
 
 ### 3. Create a Telegram Bot
 
@@ -353,6 +353,8 @@ If the bot can bind but cannot upload:
 The app initializes these tables automatically:
 
 - `users`
+- `app_sessions`
+- `smartermail_sessions`
 - `bind_tokens`
 - `uploaded_images`
 
