@@ -4,9 +4,11 @@
 
 A focused image-hosting dashboard for CraneMail workspace storage. It uploads images into a configured CraneMail workspace folder, publishes public links, syncs existing workspace images, and supports Telegram bot uploads for linked users.
 
-Need an email workspace for this project? You can sign up through the NameCrane referral link: [namecrane.com/r/434/email](https://namecrane.com/r/434/email).
+Need an email workspace for this project? You can [sign up through my NameCrane referral link](https://namecrane.com/r/434/email).
 
-Compatibility note: this project is developed and tested against CraneMail, but compatibility with other SmarterMail deployments is not guaranteed.
+Compatibility note: this project is developed and tested against CraneMail, but compatibility with other SmarterMail instances is not guaranteed.
+
+![preview](https://us1.workspace.org/d/v2/yaikbaKQV0odeVqFeJ1su6GLxtf2aX-x/CGVW72X7M01V)
 
 ## Features
 
@@ -392,8 +394,8 @@ The bot supports:
 
 - `/start <token>` - bind Telegram to a CraneMail account
 - Photo or document upload - upload to CraneMail and return a public link
-- `/list`, `/images`, or `📂 My Images / 我的图片` - list recent uploads
-- `/help` or `❓ Help / 帮助` - show usage help
+- `/list`, `/images`, or `📂 My Images` - list recent uploads
+- `/help` or `❓ Help` - show usage help
 
 To bind a Telegram account:
 
@@ -405,57 +407,8 @@ To bind a Telegram account:
 
 The bot stores uploads in the same CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` structure and records metadata in the same `uploaded_images` table.
 
-## Telegram Webhook
-
-Webhook endpoint:
-
-```text
-/api/telegram/webhook
-```
-
-For a deployed app, register the production webhook with Telegram:
-
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
-```
-
-Verify that Telegram is pointing to the deployed app:
-
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
-```
-
-The `url` field should be your production endpoint:
-
-```text
-https://your-domain.example/api/telegram/webhook
-```
-
-If `url` is empty, points to another domain, or `last_error_message` reports delivery failures, re-run `setWebhook` with the correct production URL. After using `npm run dev:bot`, you must also re-register the production webhook because the local polling script deletes the active webhook before calling `getUpdates`.
-
-For local development, expose your local server with a tunnel such as ngrok or Cloudflare Tunnel, then register the tunnel URL.
-
-Alternatively, use `npm run dev:bot` to debug the bot with Telegram polling instead of a webhook.
-
-## UI Notes
-
-- Buttons, inputs, cards, alert dialogs, and toaster UI use shadcn/ui components.
-- Icons use lucide-react.
-- Toast notifications use sonner.
-- The `/upload` dashboard is marked `noindex` because it is an authenticated application surface.
-- A GitHub referral button is shown in the top-right corner and points to:
-
-```text
-https://github.com/sdrpsps/cranemail-images
-```
-
-## Current Bot Limitation
-
-The Telegram bot can upload and list images, but it does not yet expose a delete command or inline delete buttons. File deletion is currently available from the web dashboard.
-
 ## Security Notes
 
-- Use HTTPS in production.
 - Keep `ENCRYPTION_KEY`, `TELEGRAM_BOT_TOKEN`, and Turso credentials private.
 - Use `ALLOWED_TELEGRAM_USERS` when the bot should be restricted to specific Telegram accounts.
 - Rotate `ENCRYPTION_KEY` carefully. Existing encrypted passwords cannot be decrypted after changing it unless you migrate or rebind users.

@@ -4,9 +4,11 @@
 
 CraneMail Images 是一个面向 CraneMail workspace 存储的轻量图片托管面板。它可以把图片上传到指定的 CraneMail workspace 文件夹，生成公开链接，同步 workspace 中已有图片，并支持已绑定用户通过 Telegram bot 上传文件。
 
-需要为这个项目准备邮箱 workspace？可以通过我的 NameCrane 推荐链接注册：[namecrane.com/r/434/email](https://namecrane.com/r/434/email)。
+需要为这个项目准备邮箱 workspace？可以通过我的 NameCrane [推荐链接注册](https://namecrane.com/r/434/email)。
 
-兼容性说明：本项目基于 CraneMail 开发和测试，但不保证兼容其他 SmarterMail 部署。
+兼容性说明：本项目基于 CraneMail 开发和测试，但不保证兼容其他 SmarterMail 实例。
+
+![preview](https://us1.workspace.org/d/v2/yaikbaKQV0odeVqFeJ1su6GLxtf2aX-x/CGVW72X7M01V)
 
 ## 功能
 
@@ -392,8 +394,8 @@ Bot 当前支持：
 
 - `/start <token>` - 绑定 Telegram 到 CraneMail 账号
 - 上传照片或文档 - 上传到 CraneMail 并返回公开链接
-- `/list`、`/images` 或 `📂 My Images / 我的图片` - 查看最近上传
-- `/help` 或 `❓ Help / 帮助` - 查看帮助
+- `/list`、`/images` 或 `📂 My Images` - 查看最近上传
+- `/help` 或 `❓ Help` - 查看帮助
 
 绑定 Telegram 账号：
 
@@ -405,57 +407,8 @@ Bot 当前支持：
 
 Bot 上传文件会使用同样的 CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` 目录结构，并把元数据写入同一个 `uploaded_images` 表。
 
-## Telegram Webhook
-
-Webhook endpoint:
-
-```text
-/api/telegram/webhook
-```
-
-部署后，需要向 Telegram 注册生产环境 webhook：
-
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
-```
-
-确认 Telegram 当前指向的是已部署应用：
-
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
-```
-
-返回中的 `url` 字段应为生产环境 endpoint：
-
-```text
-https://your-domain.example/api/telegram/webhook
-```
-
-如果 `url` 为空、指向了其他域名，或 `last_error_message` 显示投递失败，请用正确的生产环境 URL 重新执行 `setWebhook`。使用 `npm run dev:bot` 后也必须重新注册生产 webhook，因为本地 polling 脚本会先删除当前 webhook，再调用 `getUpdates`。
-
-本地开发时，可以用 ngrok 或 Cloudflare Tunnel 暴露本地服务，再注册 tunnel URL。
-
-也可以使用 `npm run dev:bot` 通过 Telegram polling 调试 bot，不需要本地 webhook。
-
-## UI 说明
-
-- 按钮、输入框、卡片、Alert Dialog 和 toaster 使用 shadcn/ui 组件。
-- 图标使用 lucide-react。
-- Toast notifications 使用 sonner。
-- `/upload` 是登录后的应用页面，因此 metadata 中设置了 `noindex`。
-- 右上角 GitHub 引流按钮指向：
-
-```text
-https://github.com/sdrpsps/cranemail-images
-```
-
-## 当前 Bot 限制
-
-Telegram bot 当前可以上传和列出图片，但还没有删除命令或 inline 删除按钮。文件删除目前需要在 Web dashboard 中完成。
-
 ## 安全说明
 
-- 生产环境请使用 HTTPS。
 - 请妥善保护 `ENCRYPTION_KEY`、`TELEGRAM_BOT_TOKEN` 和 Turso credentials。
 - 如果 bot 只应开放给特定账号，请配置 `ALLOWED_TELEGRAM_USERS`。
 - 请谨慎轮换 `ENCRYPTION_KEY`。更换后，已有加密密码无法解密，除非你执行迁移或让用户重新绑定。
