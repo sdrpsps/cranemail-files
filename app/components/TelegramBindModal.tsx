@@ -80,7 +80,7 @@ export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModa
 
             <div className="space-y-2">
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-400" htmlFor="bind-password">
-                Enter Cranemail Password
+                Enter CraneMail Password
               </label>
               <Input
                 id="bind-password"

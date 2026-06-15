@@ -111,10 +111,6 @@ export function useImages() {
 
   const deleteImage = useCallback(
     async (id: string) => {
-      if (!confirm('Are you sure you want to remove this image record?')) {
-        return
-      }
-
       setDeletingIds((prev) => {
         const next = new Set(prev)
         next.add(id)

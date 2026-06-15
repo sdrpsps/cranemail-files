@@ -33,7 +33,7 @@ app.onError((err, c) => {
   // Handle general/unexpected runtime errors
   const isDev = process.env.NODE_ENV === 'development'
   const errorMessage = err.message || 'An unexpected error occurred'
-  
+
   return apiError(
     c,
     isDev ? errorMessage : 'Internal Server Error',
@@ -195,7 +195,7 @@ async function getValidAccessToken(c: Context, forceRefresh = false): Promise<{ 
     try {
       console.log('Refreshing expired SmarterMail access token in helper...')
       const refreshResult = await refreshSmarterMailToken(serverUrl, refreshToken)
-      
+
       if (refreshResult.success && refreshResult.accessToken) {
         setAuthCookies(
           c,
@@ -315,7 +315,7 @@ app.post('/auth/telegram/bind-token', async (c) => {
     })
 
     const client = new SmarterMailClient(serverUrl)
-    
+
     // 2. Validate password against SmarterMail
     const verifyAuth = await client.authenticateUser(email, password)
     if (!verifyAuth.success) {
@@ -340,7 +340,7 @@ app.post('/auth/telegram/bind-token', async (c) => {
       ]
     })
 
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'CranemailImagesBot'
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'CraneMailImagesBot'
     const bindUrl = `https://t.me/${botUsername}?start=${token}`
 
     return apiSuccess(c, { token, bindUrl }, 'Binding link generated successfully')

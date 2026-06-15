@@ -25,7 +25,7 @@ interface UploadDashboardProps {
   onRefreshSession: () => Promise<void>
   onSyncWorkspace: () => void
   onCopyLink: (url: string) => void
-  onDeleteImage: (id: string) => void
+  onDeleteImage: (id: string) => Promise<void> | void
   onDrag: (e: DragEvent) => void
   onDrop: (e: DragEvent) => void
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void
@@ -66,7 +66,7 @@ export function UploadDashboard({
               <CloudBackup className="h-7 w-7 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">Cranemail Cloud Drive</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-white">CraneMail Cloud Drive</h1>
               <p className="mt-1 text-sm text-zinc-400">Personal Cloud Image Host</p>
             </div>
           </div>

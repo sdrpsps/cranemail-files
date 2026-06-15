@@ -205,7 +205,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
     if (args.length < 2) {
       await sendTelegramMessage(
         chatId,
-        `👋 <b>Welcome to Cranemail Image Host!</b>\n\nTo upload photos to your SmarterMail cloud storage using this bot, please link your account:\n\n1. Open our website in your browser.\n2. Sign in to your mail account.\n3. Click <b>"Link Telegram Bot"</b> to generate a binding link.\n\nOnce linked, any photo or document you send here will be uploaded and a public sharing link will be generated.`,
+        `👋 <b>Welcome to CraneMail Image Host!</b>\n\nTo upload photos to your SmarterMail cloud storage using this bot, please link your account:\n\n1. Open our website in your browser.\n2. Sign in to your mail account.\n3. Click <b>"Link Telegram Bot"</b> to generate a binding link.\n\nOnce linked, any photo or document you send here will be uploaded and a public sharing link will be generated.`,
         botMainMenu
       )
       return
@@ -257,7 +257,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
       await sendTelegramMessage(
         chatId,
-        `🎉 <b>Binding Successful!</b>\n\nYour Telegram account has been linked to Cranemail account: <code>${bindToken.email}</code>.\n\nYou can now send photos or files to this bot, and they will be uploaded directly to your cloud drive!`,
+        `🎉 <b>Binding Successful!</b>\n\nYour Telegram account has been linked to CraneMail account: <code>${bindToken.email}</code>.\n\nYou can now send photos or files to this bot, and they will be uploaded directly to your cloud drive!`,
         botMainMenu
       )
     } catch (err) {
@@ -294,12 +294,12 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
       if (!user) {
         await sendTelegramMessage(
           chatId,
-          '❌ <b>Upload Blocked:</b>\nYour Telegram account is not bound to a Cranemail account. Please sign in to the website and click <b>"Link Telegram Bot"</b> first.'
+          '❌ <b>Upload Blocked:</b>\nYour Telegram account is not bound to a CraneMail account. Please sign in to the website and click <b>"Link Telegram Bot"</b> first.'
         )
         return
       }
 
-      await sendTelegramMessage(chatId, '⚡ <i>Uploading to Cranemail Cloud Storage...</i>')
+      await sendTelegramMessage(chatId, '⚡ <i>Uploading to CraneMail Cloud Storage...</i>')
 
       const { client, accessToken } = await getSmarterMailAuthForBot(user)
 
@@ -396,7 +396,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
         if (!user) {
           await sendTelegramMessage(
             chatId,
-            '❌ <b>Access Denied:</b>\nYour Telegram account is not bound to a Cranemail account. Please sign in to the website and click <b>"Link Telegram Bot"</b> first.',
+            '❌ <b>Access Denied:</b>\nYour Telegram account is not bound to a CraneMail account. Please sign in to the website and click <b>"Link Telegram Bot"</b> first.',
             botMainMenu
           )
           return
@@ -434,13 +434,13 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
     } else if (text.includes('Help') || text.includes('帮助') || text.startsWith('/help')) {
       await sendTelegramMessage(
         chatId,
-        `💬 Send me a photo or a file to upload it directly to your Cranemail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.\nUse <code>📂 My Images</code> or <code>/list</code> to see your recently uploaded images.`,
+        `💬 Send me a photo or a file to upload it directly to your CraneMail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.\nUse <code>📂 My Images</code> or <code>/list</code> to see your recently uploaded images.`,
         botMainMenu
       )
     } else {
       await sendTelegramMessage(
         chatId,
-        `💬 Send me a photo or a file to upload it directly to your Cranemail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.`,
+        `💬 Send me a photo or a file to upload it directly to your CraneMail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.`,
         botMainMenu
       )
     }

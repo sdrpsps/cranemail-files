@@ -59,7 +59,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     <div className="rounded-3xl border border-zinc-800/80 bg-zinc-900/40 p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-2xl transition-all duration-500 md:p-10">
       <div className="mb-6 border-b border-zinc-800/60 pb-6 text-center">
         <h1 className="bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-3xl font-extrabold tracking-tight text-transparent">
-          Cranemail Image Host
+          CraneMail Image Host
         </h1>
         <p className="mt-2 text-sm text-zinc-400">Sign in with SmarterMail to link cloud drive space</p>
       </div>
