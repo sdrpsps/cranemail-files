@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { handle } from 'hono/vercel'
 import { HTTPException } from 'hono/http-exception'
 import { apiError } from '@/lib/response'
-import { initDb } from '@/lib/db'
+import { ensureDbInitialized } from '@/lib/db'
 import authApp from './_routes/auth'
 import uploadApp from './_routes/upload'
 import filesApp from './_routes/files'
@@ -11,8 +11,10 @@ import telegramApp from './_routes/telegram'
 // Initialize Hono app. Setting the basePath allows matching subroutes correctly.
 const app = new Hono().basePath('/api')
 
-// Initialize DB tables asynchronously on module load
-initDb().catch((err) => console.error('Database DDL initialization failed:', err))
+app.use('*', async (_c, next) => {
+  await ensureDbInitialized()
+  await next()
+})
 
 // Global 404 Not Found Handler
 app.notFound((c) => {

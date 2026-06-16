@@ -13,6 +13,19 @@ export const db = createClient({
   ...(authToken ? { authToken } : {}),
 })
 
+let initDbPromise: Promise<void> | null = null
+
+export function ensureDbInitialized(): Promise<void> {
+  if (!initDbPromise) {
+    initDbPromise = initDb().catch((err) => {
+      initDbPromise = null
+      throw err
+    })
+  }
+
+  return initDbPromise
+}
+
 /**
  * Automatically initializes database schema tables if they do not exist.
  * This is called on API initialization so local and remote databases auto-provision.
@@ -79,5 +92,6 @@ export async function initDb() {
     console.log('[Database] Tables checked/created successfully.')
   } catch (err) {
     console.error('[Database] Failed to initialize tables:', err)
+    throw err
   }
 }

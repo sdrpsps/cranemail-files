@@ -1,4 +1,4 @@
-import { db } from './db'
+import { db, ensureDbInitialized } from './db'
 import { SmarterMailClient } from './smartermail'
 import { getSmarterMailAuthForUser } from './smartermail-session'
 import crypto from 'crypto'
@@ -121,6 +121,8 @@ export async function sendTelegramMessage(chatId: number | string, text: string,
  * Core entrypoint to handle incoming Telegram updates (via webhook or polling).
  */
 export async function handleTelegramUpdate(update: TelegramUpdate) {
+  await ensureDbInitialized()
+
   const token = getBotToken()
   if (!token) {
     console.error('TELEGRAM_BOT_TOKEN is not configured.')
