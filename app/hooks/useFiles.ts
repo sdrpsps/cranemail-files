@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import { toast } from 'sonner'
 
-import type { UploadedImage } from '@/app/types/app'
+import type { UploadedFile } from '@/app/types/app'
 
 function showToast(message: string, type: 'success' | 'error' | 'info' = 'success') {
   if (type === 'error') {
@@ -20,32 +20,32 @@ function showToast(message: string, type: 'success' | 'error' | 'info' = 'succes
   toast.success(message)
 }
 
-export function useImages() {
-  const [images, setImages] = useState<UploadedImage[]>([])
-  const [imagesLoading, setImagesLoading] = useState(false)
-  const [imagesError, setImagesError] = useState('')
+export function useFiles() {
+  const [files, setFiles] = useState<UploadedFile[]>([])
+  const [filesLoading, setFilesLoading] = useState(false)
+  const [filesError, setFilesError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [isDragActive, setIsDragActive] = useState(false)
   const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set())
   const [syncing, setSyncing] = useState(false)
 
-  const fetchImages = useCallback(async () => {
-    setImagesLoading(true)
-    setImagesError('')
+  const fetchFiles = useCallback(async () => {
+    setFilesLoading(true)
+    setFilesError('')
     try {
-      const res = await fetch('/api/images')
+      const res = await fetch('/api/files')
       const data = await res.json()
       if (data.success && data.data) {
-        setImages(data.data)
+        setFiles(data.data)
       } else {
-        setImagesError(data.message || 'Failed to fetch uploaded images')
+        setFilesError(data.message || 'Failed to fetch uploaded files')
       }
     } catch (err) {
-      setImagesError('Network error. Failed to load uploaded images.')
+      setFilesError('Network error. Failed to load uploaded files.')
       console.error(err)
     } finally {
-      setImagesLoading(false)
+      setFilesLoading(false)
     }
   }, [])
 
@@ -64,7 +64,7 @@ export function useImages() {
         })
         const data = await res.json()
         if (data.success && data.data) {
-          const newImg: UploadedImage = {
+          const newFile: UploadedFile = {
             id: data.data.id,
             fileName: data.data.fileName,
             publicLink: data.data.publicLink,
@@ -72,8 +72,8 @@ export function useImages() {
             source: 'web',
             createdAt: data.data.createdAt || new Date().toISOString(),
           }
-          setImages((prev) => [newImg, ...prev])
-          showToast('Image uploaded successfully!')
+          setFiles((prev) => [newFile, ...prev])
+          showToast('File uploaded successfully!')
         } else {
           setUploadError(data.message || 'Upload failed. Please try again.')
         }
@@ -90,14 +90,14 @@ export function useImages() {
   const syncWorkspace = useCallback(async () => {
     setSyncing(true)
     try {
-      const res = await fetch('/api/images/sync', {
+      const res = await fetch('/api/files/sync', {
         method: 'POST',
       })
       const data = await res.json()
       if (data.success && data.data) {
         const count = data.data.syncedCount
-        showToast(`Successfully synced ${count} new image(s) from workspace!`)
-        fetchImages()
+        showToast(`Successfully synced ${count} new file(s) from workspace!`)
+        fetchFiles()
       } else {
         showToast(data.message || 'Sync failed. Please try again.', 'error')
       }
@@ -107,9 +107,9 @@ export function useImages() {
     } finally {
       setSyncing(false)
     }
-  }, [fetchImages])
+  }, [fetchFiles])
 
-  const deleteImage = useCallback(
+  const deleteFile = useCallback(
     async (id: string) => {
       setDeletingIds((prev) => {
         const next = new Set(prev)
@@ -118,18 +118,18 @@ export function useImages() {
       })
 
       try {
-        const res = await fetch(`/api/images/${id}`, {
+        const res = await fetch(`/api/files/${id}`, {
           method: 'DELETE',
         })
         const data = await res.json()
         if (data.success) {
-          setImages((prev) => prev.filter((img) => img.id !== id))
-          showToast('Image record removed')
+          setFiles((prev) => prev.filter((file) => file.id !== id))
+          showToast('File record removed')
         } else {
-          showToast(data.message || 'Failed to delete the image record', 'error')
+          showToast(data.message || 'Failed to delete the file record', 'error')
         }
       } catch (err) {
-        showToast('Connection error. Failed to delete image.', 'error')
+        showToast('Connection error. Failed to delete file.', 'error')
         console.error(err)
       } finally {
         setDeletingIds((prev) => {
@@ -184,21 +184,21 @@ export function useImages() {
   )
 
   return {
-    images,
-    imagesLoading,
-    imagesError,
+    files,
+    filesLoading,
+    filesError,
     uploading,
     uploadError,
     isDragActive,
     deletingIds,
     syncing,
-    fetchImages,
+    fetchFiles,
     syncWorkspace,
-    deleteImage,
+    deleteFile,
     copyLink,
     handleDrag,
     handleDrop,
     handleFileChange,
-    setImages,
+    setFiles,
   }
 }

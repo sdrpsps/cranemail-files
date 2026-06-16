@@ -6,16 +6,16 @@ import { AlertTriangle, CheckCircle2, LogOut, Server } from 'lucide-react'
 
 import { TelegramBindModal } from '@/app/components/TelegramBindModal'
 import { UploadDropzone } from '@/app/components/UploadDropzone'
-import { UploadedImagesGrid } from '@/app/components/UploadedImagesGrid'
-import type { UploadedImage, User } from '@/app/types/app'
+import { UploadedFilesGrid } from '@/app/components/UploadedFilesGrid'
+import type { UploadedFile, User } from '@/app/types/app'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
 interface UploadDashboardProps {
   user: User
-  images: UploadedImage[]
-  imagesLoading: boolean
-  imagesError: string
+  files: UploadedFile[]
+  filesLoading: boolean
+  filesError: string
   uploading: boolean
   uploadError: string
   isDragActive: boolean
@@ -23,10 +23,10 @@ interface UploadDashboardProps {
   deletingIds: Set<string>
   onLogout: () => void
   onRefreshSession: () => Promise<void>
-  onRefreshImages: () => Promise<void>
+  onRefreshFiles: () => Promise<void>
   onSyncWorkspace: () => void
   onCopyLink: (url: string) => void
-  onDeleteImage: (id: string) => Promise<void> | void
+  onDeleteFile: (id: string) => Promise<void> | void
   onDrag: (e: DragEvent) => void
   onDrop: (e: DragEvent) => void
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void
@@ -34,9 +34,9 @@ interface UploadDashboardProps {
 
 export function UploadDashboard({
   user,
-  images,
-  imagesLoading,
-  imagesError,
+  files,
+  filesLoading,
+  filesError,
   uploading,
   uploadError,
   isDragActive,
@@ -44,10 +44,10 @@ export function UploadDashboard({
   deletingIds,
   onLogout,
   onRefreshSession,
-  onRefreshImages,
+  onRefreshFiles,
   onSyncWorkspace,
   onCopyLink,
-  onDeleteImage,
+  onDeleteFile,
   onDrag,
   onDrop,
   onFileChange,
@@ -69,7 +69,7 @@ export function UploadDashboard({
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-white">CraneMail Cloud Drive</h1>
-              <p className="mt-1 text-sm text-zinc-400">Personal Cloud Image Host</p>
+              <p className="mt-1 text-sm text-zinc-400">Personal Cloud File Share</p>
             </div>
           </div>
 
@@ -139,16 +139,16 @@ export function UploadDashboard({
             />
           </aside>
 
-          <UploadedImagesGrid
-            images={images}
-            imagesLoading={imagesLoading}
-            imagesError={imagesError}
+          <UploadedFilesGrid
+            files={files}
+            filesLoading={filesLoading}
+            filesError={filesError}
             syncing={syncing}
             deletingIds={deletingIds}
-            onRefreshImages={onRefreshImages}
+            onRefreshFiles={onRefreshFiles}
             onSyncWorkspace={onSyncWorkspace}
             onCopyLink={onCopyLink}
-            onDeleteImage={onDeleteImage}
+            onDeleteFile={onDeleteFile}
           />
         </div>
       </Card>

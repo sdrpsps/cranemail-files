@@ -42,7 +42,6 @@ export function UploadDropzone({
           className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
           onChange={onFileChange}
           disabled={uploading}
-          accept="image/jpeg,image/png,image/gif,image/webp"
         />
 
         {uploading ? (
@@ -53,8 +52,8 @@ export function UploadDropzone({
         ) : (
           <div className="flex flex-col items-center space-y-2">
             <UploadCloud className="h-8 w-8 text-zinc-500" />
-            <span className="text-xs font-medium text-zinc-300">Drag & drop image here or click to browse</span>
-            <span className="text-[10px] text-zinc-500">Supports JPG, PNG, GIF, WebP up to 10MB</span>
+            <span className="text-xs font-medium text-zinc-300">Drag & drop file here or click to browse</span>
+            <span className="text-[10px] text-zinc-500">Uploads files supported by CraneMail workspace storage</span>
           </div>
         )}
       </div>

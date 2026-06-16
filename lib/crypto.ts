@@ -2,7 +2,7 @@ import crypto from 'crypto'
 
 // Derive a secure 32-byte key from the configured ENCRYPTION_KEY environment variable.
 // If not specified, we fall back to a hardcoded string for development ease, but warn the user.
-const rawKey = process.env.ENCRYPTION_KEY || 'cranemail-images-app-default-development-encryption-key'
+const rawKey = process.env.ENCRYPTION_KEY || 'cranemail-files-app-default-development-encryption-key'
 if (!process.env.ENCRYPTION_KEY && process.env.NODE_ENV === 'production') {
   console.warn('[WARNING] ENCRYPTION_KEY env variable is not set! Using default key in production is highly insecure.')
 }

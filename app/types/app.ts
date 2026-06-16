@@ -10,7 +10,7 @@ export interface BindData {
   bindUrl: string
 }
 
-export interface UploadedImage {
+export interface UploadedFile {
   id: string
   fileName: string
   publicLink: string

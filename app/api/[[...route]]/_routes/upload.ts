@@ -56,14 +56,14 @@ uploadApp.post('/', async (c) => {
       }
     })
 
-    // 3. Save uploaded image metadata to database
-    const imageId = nodeCrypto.randomUUID()
+    // 3. Save uploaded file metadata to database
+    const fileRecordId = nodeCrypto.randomUUID()
     const createdAt = new Date().toISOString()
     await db.execute({
-      sql: `INSERT INTO uploaded_images (id, email, fileId, fileName, publicLink, size, source, createdAt)
+      sql: `INSERT INTO uploaded_files (id, email, fileId, fileName, publicLink, size, source, createdAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        imageId,
+        fileRecordId,
         uploadResult.email,
         uploadResult.fileId,
         fileName,
@@ -75,7 +75,7 @@ uploadApp.post('/', async (c) => {
     })
 
     return apiSuccess(c, {
-      id: imageId,
+      id: fileRecordId,
       fileName,
       publicLink: uploadResult.publicLink,
       size: file.size,

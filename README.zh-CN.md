@@ -1,8 +1,8 @@
-# CraneMail Images
+# CraneMail Files
 
 [English](./README.md)
 
-CraneMail Images 是一个面向 CraneMail workspace 存储的轻量图片托管面板。它可以把图片上传到指定的 CraneMail workspace 文件夹，生成公开链接，同步 workspace 中已有图片，并支持已绑定用户通过 Telegram bot 上传文件。
+CraneMail Files 是一个面向 CraneMail workspace 存储的轻量文件分享面板。它可以把文件上传到指定的 CraneMail workspace 文件夹，生成公开链接，同步 workspace 中已有文件，并支持已绑定用户通过 Telegram bot 上传文件。
 
 需要为这个项目准备邮箱 workspace？可以通过我的 NameCrane [推荐链接注册](https://namecrane.com/r/434/email)。
 
@@ -13,13 +13,13 @@ CraneMail Images 是一个面向 CraneMail workspace 存储的轻量图片托管
 ## 功能
 
 - 使用 CraneMail 账号登录，浏览器只保存应用自己的 session cookie，SmarterMail token 会加密保存在服务端。
-- 支持从 Web 页面上传图片到 CraneMail workspace 存储。
+- 支持从 Web 页面上传文件到 CraneMail workspace 存储。
 - 上传后自动生成公开访问链接。
-- 支持同步 `PUBLIC_FOLDER` 下已有的 workspace 图片。
-- Web 端删除图片时会先真正删除 CraneMail workspace 文件，再清理本地记录。
+- 支持同步 `PUBLIC_FOLDER` 下已有的 workspace 文件。
+- Web 端删除文件时会先真正删除 CraneMail workspace 文件，再清理本地记录。
 - 支持通过 Web 端临时 token 绑定 Telegram 账号。
 - Telegram bot 支持上传照片和文档。
-- Telegram bot 支持查看最近上传图片。
+- Telegram bot 支持查看最近上传文件。
 - 开发环境可使用本地 SQLite，生产环境可使用 Turso/libSQL。
 - 前端基于 Next.js App Router、shadcn/ui、Tailwind CSS、lucide-react 和 sonner。
 
@@ -60,14 +60,14 @@ cp .env.example .env.local
 ```env
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-images-app
+SMARTERMAIL_CLIENT_ID=cranemail-files-app
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
 
 ENCRYPTION_KEY=replace-with-a-secure-random-secret
 
 TELEGRAM_BOT_TOKEN=
-TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+TELEGRAM_BOT_USERNAME=CraneMailFilesBot
 
 TURSO_DATABASE_URL=
 TURSO_AUTH_TOKEN=
@@ -188,7 +188,7 @@ https://app.turso.tech
 在 Dashboard 中创建数据库：
 
 1. 点击 `Create Database`。
-2. 填写数据库名称，例如 `cranemail-images`。
+2. 填写数据库名称，例如 `cranemail-files`。
 3. 选择靠近 Vercel 部署区域或主要用户的 region。
 4. 创建数据库。
 
@@ -211,7 +211,7 @@ TURSO_DATABASE_URL=libsql://...
 TURSO_AUTH_TOKEN=...
 ```
 
-应用启动时会自动创建所需的 `users`、`app_sessions`、`smartermail_sessions`、`bind_tokens` 和 `uploaded_images` 表，不需要单独执行 migration 命令。
+应用启动时会自动创建所需的 `users`、`app_sessions`、`smartermail_sessions`、`bind_tokens` 和 `uploaded_files` 表，不需要单独执行 migration 命令。
 
 ### 3. 创建 Telegram Bot
 
@@ -230,7 +230,7 @@ TURSO_AUTH_TOKEN=...
 
 ```env
 TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+TELEGRAM_BOT_USERNAME=CraneMailFilesBot
 ```
 
 如果只允许特定 Telegram 账号使用 bot，可以配置：
@@ -257,14 +257,14 @@ ALLOWED_TELEGRAM_USERS=123456789,some_username
 ```env
 NEXT_PUBLIC_SITE_URL=https://your-domain.example
 NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-images-app
+SMARTERMAIL_CLIENT_ID=cranemail-files-app
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
 
 ENCRYPTION_KEY=your-stable-random-secret
 
 TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+TELEGRAM_BOT_USERNAME=CraneMailFilesBot
 ALLOWED_TELEGRAM_USERS=
 
 TURSO_DATABASE_URL=libsql://...
@@ -316,7 +316,7 @@ https://your-domain.example
 
 1. 使用 CraneMail 账号登录。
 2. 打开 `/upload`。
-3. 从 Web dashboard 上传一张小图片。
+3. 从 Web dashboard 上传一个小文件。
 4. 生成 Telegram 绑定 token。
 5. 打开生成的 Telegram bot 链接，并发送 `/start <token>`。
 6. 确认 bot 返回绑定成功消息。
@@ -358,7 +358,7 @@ POST /api/telegram/webhook
 - `app_sessions`
 - `smartermail_sessions`
 - `bind_tokens`
-- `uploaded_images`
+- `uploaded_files`
 
 本地开发默认使用：
 
@@ -382,11 +382,11 @@ PUBLIC_FOLDER/YYYY/MM/DD
 /public/2026/06/15
 ```
 
-上传后，应用会生成 CraneMail workspace 公开链接，并把文件元数据保存到 `uploaded_images`。
+上传后，应用会生成 CraneMail workspace 公开链接，并把文件元数据保存到 `uploaded_files`。
 
-Workspace 同步会递归扫描 `PUBLIC_FOLDER`，并根据 `fileId` 或 `publicLink` 导入本地尚未存在的图片。
+Workspace 同步会递归扫描 `PUBLIC_FOLDER`，并根据 `fileId` 或 `publicLink` 导入本地尚未存在的文件。
 
-从 Web 面板删除图片时，应用会先真正删除 CraneMail workspace 文件。只有 workspace API 返回删除成功后，本地数据库记录才会被移除。
+从 Web 面板删除文件时，应用会先真正删除 CraneMail workspace 文件。只有 workspace API 返回删除成功后，本地数据库记录才会被移除。
 
 ## Telegram Bot
 
@@ -394,7 +394,7 @@ Bot 当前支持：
 
 - `/start <token>` - 绑定 Telegram 到 CraneMail 账号
 - 上传照片或文档 - 上传到 CraneMail 并返回公开链接
-- `/list`、`/images` 或 `📂 My Images` - 查看最近上传
+- `/list`、`/files` 或 `📂 My Files` - 查看最近上传
 - `/help` 或 `❓ Help` - 查看帮助
 
 绑定 Telegram 账号：
@@ -405,7 +405,7 @@ Bot 当前支持：
 4. 通过生成的链接打开 bot。
 5. 向 bot 发送文件或照片。
 
-Bot 上传文件会使用同样的 CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` 目录结构，并把元数据写入同一个 `uploaded_images` 表。
+Bot 上传文件会使用同样的 CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` 目录结构，并把元数据写入同一个 `uploaded_files` 表。
 
 ## 安全说明
 

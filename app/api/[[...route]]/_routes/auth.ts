@@ -180,7 +180,7 @@ authApp.post('/telegram/bind-token', async (c) => {
       ],
     })
 
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'CraneMailImagesBot'
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'CraneMailFilesBot'
     const bindUrl = `https://t.me/${botUsername}?start=${token}`
 
     return apiSuccess(c, { token, bindUrl }, 'Binding link generated successfully')

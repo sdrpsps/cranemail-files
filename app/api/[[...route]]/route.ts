@@ -5,7 +5,7 @@ import { apiError } from '@/lib/response'
 import { initDb } from '@/lib/db'
 import authApp from './_routes/auth'
 import uploadApp from './_routes/upload'
-import imagesApp from './_routes/images'
+import filesApp from './_routes/files'
 import telegramApp from './_routes/telegram'
 
 // Initialize Hono app. Setting the basePath allows matching subroutes correctly.
@@ -44,7 +44,7 @@ app.onError((err, c) => {
 // Mount feature routes
 app.route('/auth', authApp)
 app.route('/upload', uploadApp)
-app.route('/images', imagesApp)
+app.route('/files', filesApp)
 app.route('/telegram', telegramApp)
 
 // Export HTTP method handlers to be consumed by Next.js App Router

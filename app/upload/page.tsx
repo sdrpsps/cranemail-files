@@ -7,29 +7,29 @@ import { AppFrame } from '@/app/components/AppFrame'
 import { LoadingState } from '@/app/components/LoadingState'
 import { UploadDashboard } from '@/app/components/UploadDashboard'
 import { useAuthSession } from '@/app/hooks/useAuthSession'
-import { useImages } from '@/app/hooks/useImages'
+import { useFiles } from '@/app/hooks/useFiles'
 
 export default function UploadPage() {
   const router = useRouter()
   const { user, loading, checkSession, logout } = useAuthSession()
   const {
-    images,
-    imagesLoading,
-    imagesError,
+    files,
+    filesLoading,
+    filesError,
     uploading,
     uploadError,
     isDragActive,
     deletingIds,
     syncing,
-    fetchImages,
+    fetchFiles,
     syncWorkspace,
-    deleteImage,
+    deleteFile,
     copyLink,
     handleDrag,
     handleDrop,
     handleFileChange,
-    setImages,
-  } = useImages()
+    setFiles,
+  } = useFiles()
 
   useEffect(() => {
     if (!loading && !user) {
@@ -39,11 +39,11 @@ export default function UploadPage() {
 
   useEffect(() => {
     if (user) {
-      fetchImages()
+      fetchFiles()
     } else {
-      setImages([])
+      setFiles([])
     }
-  }, [user, fetchImages, setImages])
+  }, [user, fetchFiles, setFiles])
 
   const handleLogout = async () => {
     await logout()
@@ -57,9 +57,9 @@ export default function UploadPage() {
       ) : (
         <UploadDashboard
           user={user}
-          images={images}
-          imagesLoading={imagesLoading}
-          imagesError={imagesError}
+          files={files}
+          filesLoading={filesLoading}
+          filesError={filesError}
           uploading={uploading}
           uploadError={uploadError}
           isDragActive={isDragActive}
@@ -67,10 +67,10 @@ export default function UploadPage() {
           deletingIds={deletingIds}
           onLogout={handleLogout}
           onRefreshSession={checkSession}
-          onRefreshImages={fetchImages}
+          onRefreshFiles={fetchFiles}
           onSyncWorkspace={syncWorkspace}
           onCopyLink={copyLink}
-          onDeleteImage={deleteImage}
+          onDeleteFile={deleteFile}
           onDrag={handleDrag}
           onDrop={handleDrop}
           onFileChange={handleFileChange}

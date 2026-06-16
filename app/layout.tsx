@@ -11,25 +11,24 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL!
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  applicationName: "CraneMail Images",
+  applicationName: "CraneMail Files",
   title: {
-    default: "CraneMail Images | CraneMail Workspace Image Host",
-    template: "%s | CraneMail Images",
+    default: "CraneMail Files | CraneMail Workspace File Share",
+    template: "%s | CraneMail Files",
   },
   description:
-    "A lightweight CraneMail workspace image hosting dashboard for uploading, syncing, sharing, and managing public image links.",
+    "A lightweight CraneMail workspace file sharing dashboard for uploading, syncing, sharing, and managing public file links.",
   keywords: [
     "CraneMail",
     "CraneMail workspace",
-    "image hosting",
-    "workspace storage",
     "file sharing",
+    "workspace storage",
     "Telegram upload bot",
-    "public image links",
+    "public file links",
   ],
-  authors: [{ name: "CraneMail Images" }],
-  creator: "CraneMail Images",
-  publisher: "CraneMail Images",
+  authors: [{ name: "CraneMail Files" }],
+  creator: "CraneMail Files",
+  publisher: "CraneMail Files",
   category: "technology",
   alternates: {
     canonical: "/",
@@ -37,16 +36,16 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     url: "/",
-    siteName: "CraneMail Images",
-    title: "CraneMail Images | CraneMail Workspace Image Host",
+    siteName: "CraneMail Files",
+    title: "CraneMail Files | CraneMail Workspace File Share",
     description:
-      "Upload images to CraneMail workspace storage, generate public links, sync workspace files, and manage uploads from web or Telegram.",
+      "Upload files to CraneMail workspace storage, generate public links, sync workspace files, and manage uploads from web or Telegram.",
   },
   twitter: {
     card: "summary",
-    title: "CraneMail Images | CraneMail Workspace Image Host",
+    title: "CraneMail Files | CraneMail Workspace File Share",
     description:
-      "Upload, sync, share, and manage CraneMail workspace images from a focused web dashboard.",
+      "Upload, sync, share, and manage CraneMail workspace files from a focused web dashboard.",
   },
   robots: {
     index: true,

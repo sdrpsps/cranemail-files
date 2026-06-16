@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Upload Dashboard",
-  description: "Manage CraneMail workspace image uploads, public links, Telegram binding, and workspace sync.",
+  description: "Manage CraneMail workspace file uploads, public links, Telegram binding, and workspace sync.",
   robots: {
     index: false,
     follow: false,

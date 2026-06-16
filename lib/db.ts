@@ -63,7 +63,7 @@ export async function initDb() {
     `)
 
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS uploaded_images (
+      CREATE TABLE IF NOT EXISTS uploaded_files (
         id TEXT PRIMARY KEY,
         email TEXT,
         fileId TEXT,
@@ -74,7 +74,8 @@ export async function initDb() {
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP
       );
     `)
-    
+
+
     console.log('[Database] Tables checked/created successfully.')
   } catch (err) {
     console.error('[Database] Failed to initialize tables:', err)

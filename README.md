@@ -1,8 +1,8 @@
-# CraneMail Images
+# CraneMail Files
 
 [简体中文](./README.zh-CN.md)
 
-A focused image-hosting dashboard for CraneMail workspace storage. It uploads images into a configured CraneMail workspace folder, publishes public links, syncs existing workspace images, and supports Telegram bot uploads for linked users.
+A focused file-sharing dashboard for CraneMail workspace storage. It uploads files into a configured CraneMail workspace folder, publishes public links, syncs existing workspace files, and supports Telegram bot uploads for linked users.
 
 Need an email workspace for this project? You can [sign up through my NameCrane referral link](https://namecrane.com/r/434/email).
 
@@ -13,9 +13,9 @@ Compatibility note: this project is developed and tested against CraneMail, but 
 ## Features
 
 - Sign in with a CraneMail account using an app session cookie while SmarterMail tokens are stored encrypted server-side.
-- Upload images from the web dashboard to CraneMail workspace storage.
+- Upload files from the web dashboard to CraneMail workspace storage.
 - Generate public links automatically after upload.
-- Sync existing workspace images under `PUBLIC_FOLDER`.
+- Sync existing workspace files under `PUBLIC_FOLDER`.
 - Delete the real CraneMail workspace file first, then remove the local record.
 - Bind Telegram accounts through temporary tokens generated from the web dashboard.
 - Upload photos and documents through the Telegram bot.
@@ -60,14 +60,14 @@ Configure the required values in `.env.local`:
 ```env
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-images-app
+SMARTERMAIL_CLIENT_ID=cranemail-files-app
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
 
 ENCRYPTION_KEY=replace-with-a-secure-random-secret
 
 TELEGRAM_BOT_TOKEN=
-TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+TELEGRAM_BOT_USERNAME=CraneMailFilesBot
 
 TURSO_DATABASE_URL=
 TURSO_AUTH_TOKEN=
@@ -188,7 +188,7 @@ https://app.turso.tech
 Create a database from the dashboard:
 
 1. Click `Create Database`.
-2. Name it, for example `cranemail-images`.
+2. Name it, for example `cranemail-files`.
 3. Choose a region close to your Vercel deployment or primary users.
 4. Create the database.
 
@@ -211,7 +211,7 @@ TURSO_DATABASE_URL=libsql://...
 TURSO_AUTH_TOKEN=...
 ```
 
-The app creates the required `users`, `app_sessions`, `smartermail_sessions`, `bind_tokens`, and `uploaded_images` tables automatically on startup. There is no separate migration command.
+The app creates the required `users`, `app_sessions`, `smartermail_sessions`, `bind_tokens`, and `uploaded_files` tables automatically on startup. There is no separate migration command.
 
 ### 3. Create a Telegram Bot
 
@@ -230,7 +230,7 @@ Example:
 
 ```env
 TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+TELEGRAM_BOT_USERNAME=CraneMailFilesBot
 ```
 
 If the bot should only work for specific Telegram accounts, set:
@@ -257,14 +257,14 @@ Configure these Vercel environment variables for `Production`:
 ```env
 NEXT_PUBLIC_SITE_URL=https://your-domain.example
 NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-images-app
+SMARTERMAIL_CLIENT_ID=cranemail-files-app
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
 
 ENCRYPTION_KEY=your-stable-random-secret
 
 TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailImagesBot
+TELEGRAM_BOT_USERNAME=CraneMailFilesBot
 ALLOWED_TELEGRAM_USERS=
 
 TURSO_DATABASE_URL=libsql://...
@@ -316,7 +316,7 @@ Then verify the main flows:
 
 1. Sign in with a CraneMail account.
 2. Open `/upload`.
-3. Upload a small image from the web dashboard.
+3. Upload a small file from the web dashboard.
 4. Generate a Telegram binding token.
 5. Open the generated Telegram bot link and send `/start <token>`.
 6. Confirm the bot replies with a successful binding message.
@@ -358,7 +358,7 @@ The app initializes these tables automatically:
 - `app_sessions`
 - `smartermail_sessions`
 - `bind_tokens`
-- `uploaded_images`
+- `uploaded_files`
 
 Local development uses:
 
@@ -382,11 +382,11 @@ For example:
 /public/2026/06/15
 ```
 
-After upload, the app generates a public CraneMail workspace link and stores file metadata in `uploaded_images`.
+After upload, the app generates a public CraneMail workspace link and stores file metadata in `uploaded_files`.
 
-Workspace sync scans `PUBLIC_FOLDER` recursively and imports image files that are not already present locally by `fileId` or `publicLink`.
+Workspace sync scans `PUBLIC_FOLDER` recursively and imports files that are not already present locally by `fileId` or `publicLink`.
 
-Deleting an image from the web dashboard performs a real CraneMail workspace file deletion first. The local database record is removed only after the workspace API reports success.
+Deleting a file from the web dashboard performs a real CraneMail workspace file deletion first. The local database record is removed only after the workspace API reports success.
 
 ## Telegram Bot
 
@@ -394,7 +394,7 @@ The bot supports:
 
 - `/start <token>` - bind Telegram to a CraneMail account
 - Photo or document upload - upload to CraneMail and return a public link
-- `/list`, `/images`, or `📂 My Images` - list recent uploads
+- `/list`, `/files`, or `📂 My Files` - list recent uploads
 - `/help` or `❓ Help` - show usage help
 
 To bind a Telegram account:
@@ -405,7 +405,7 @@ To bind a Telegram account:
 4. Launch the bot from the generated link.
 5. Send files or photos to the bot.
 
-The bot stores uploads in the same CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` structure and records metadata in the same `uploaded_images` table.
+The bot stores uploads in the same CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` structure and records metadata in the same `uploaded_files` table.
 
 ## Security Notes
 

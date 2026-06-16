@@ -56,7 +56,7 @@ export interface TelegramUpdate {
   message?: TelegramMessage
 }
 
-interface UploadedImageRow {
+interface UploadedFileRow {
   createdAt?: string | number | null
   size?: number | null
   source?: string | null
@@ -82,7 +82,7 @@ interface UserRow {
 
 export const botMainMenu = {
   keyboard: [
-    [{ text: '📂 My Images' }, { text: '❓ Help' }]
+    [{ text: '📂 My Files' }, { text: '❓ Help' }]
   ],
   resize_keyboard: true,
   one_time_keyboard: false
@@ -161,7 +161,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
     if (args.length < 2) {
       await sendTelegramMessage(
         chatId,
-        `👋 <b>Welcome to CraneMail Image Host!</b>\n\nTo upload photos to your SmarterMail cloud storage using this bot, please link your account:\n\n1. Open our website in your browser.\n2. Sign in to your mail account.\n3. Click <b>"Link Telegram Bot"</b> to generate a binding link.\n\nOnce linked, any photo or document you send here will be uploaded and a public sharing link will be generated.`,
+        `👋 <b>Welcome to CraneMail File Share!</b>\n\nTo upload files to your SmarterMail cloud storage using this bot, please link your account:\n\n1. Open our website in your browser.\n2. Sign in to your mail account.\n3. Click <b>"Link Telegram Bot"</b> to generate a binding link.\n\nOnce linked, any photo or document you send here will be uploaded and a public sharing link will be generated.`,
         botMainMenu
       )
       return
@@ -217,7 +217,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
 
       await sendTelegramMessage(
         chatId,
-        `🎉 <b>Binding Successful!</b>\n\nYour Telegram account has been linked to CraneMail account: <code>${existingUser.email}</code>.\n\nYou can now send photos or files to this bot, and they will be uploaded directly to your cloud drive!`,
+        `🎉 <b>Binding Successful!</b>\n\nYour Telegram account has been linked to CraneMail account: <code>${existingUser.email}</code>.\n\nYou can now send files to this bot, and they will be uploaded directly to your cloud drive!`,
         botMainMenu
       )
     } catch (err) {
@@ -301,14 +301,14 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
         throw new Error(linkResult.message || 'Failed to generate public download link.')
       }
 
-      // Save uploaded image metadata to database
-      const imageId = crypto.randomUUID()
+      // Save uploaded file metadata to database
+      const fileRecordId = crypto.randomUUID()
       const createdAt = new Date().toISOString()
       await db.execute({
-        sql: `INSERT INTO uploaded_images (id, email, fileId, fileName, publicLink, size, source, createdAt)
+        sql: `INSERT INTO uploaded_files (id, email, fileId, fileName, publicLink, size, source, createdAt)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
-          imageId,
+          fileRecordId,
           sessionUser.email,
           fileMeta.id,
           fileName,
@@ -345,9 +345,9 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
   if (text) {
     const isListCommand =
       text.startsWith('/list') ||
-      text.startsWith('/images') ||
-      text.includes('My Images') ||
-      text.includes('我的图片')
+      text.startsWith('/files') ||
+      text.includes('My Files') ||
+      text.includes('我的文件')
 
     if (isListCommand) {
       try {
@@ -366,48 +366,48 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
           return
         }
 
-        const imagesRes = await db.execute({
-          sql: 'SELECT * FROM uploaded_images WHERE email = ? ORDER BY createdAt DESC LIMIT 10',
+        const filesRes = await db.execute({
+          sql: 'SELECT * FROM uploaded_files WHERE email = ? ORDER BY createdAt DESC LIMIT 10',
           args: [user.email]
         })
 
-        if (imagesRes.rows.length === 0) {
+        if (filesRes.rows.length === 0) {
           await sendTelegramMessage(
             chatId,
-            '📂 <b>No uploaded images found.</b>\nSend me a photo or a file to start uploading!',
+            '📂 <b>No uploaded files found.</b>\nSend me a file to start uploading!',
             botMainMenu
           )
           return
         }
 
-        let responseText = `📂 <b>Your Uploaded Images (Recent ${imagesRes.rows.length}):</b>\n\n`
-        imagesRes.rows.forEach((row, index) => {
-          const image = row as unknown as UploadedImageRow
-          const dateStr = image.createdAt ? new Date(image.createdAt).toLocaleString('zh-CN', { timeZone: process.env.TIMEZONE || 'Asia/Shanghai' }) : 'Unknown'
-          const sizeMb = ((image.size || 0) / (1024 * 1024)).toFixed(2)
-          const sourceIcon = image.source === 'telegram' ? '🤖' : '💻'
-          const publicLink = image.publicLink || ''
+        let responseText = `📂 <b>Your Uploaded Files (Recent ${filesRes.rows.length}):</b>\n\n`
+        filesRes.rows.forEach((row, index) => {
+          const file = row as unknown as UploadedFileRow
+          const dateStr = file.createdAt ? new Date(file.createdAt).toLocaleString('zh-CN', { timeZone: process.env.TIMEZONE || 'Asia/Shanghai' }) : 'Unknown'
+          const sizeMb = ((file.size || 0) / (1024 * 1024)).toFixed(2)
+          const sourceIcon = file.source === 'telegram' ? '🤖' : '💻'
+          const publicLink = file.publicLink || ''
           const publicUrl = `${user.serverUrl}/${publicLink}`
-          responseText += `${index + 1}. <b>${image.fileName || 'Untitled'}</b> (${sizeMb} MB) ${sourceIcon}\n`
+          responseText += `${index + 1}. <b>${file.fileName || 'Untitled'}</b> (${sizeMb} MB) ${sourceIcon}\n`
           responseText += `🔗 <a href="${publicUrl}">${publicUrl}</a>\n`
           responseText += `📅 <i>${dateStr}</i>\n\n`
         })
 
         await sendTelegramMessage(chatId, responseText, botMainMenu)
       } catch (err) {
-        console.error('Telegram bot list images error:', err)
-        await sendTelegramMessage(chatId, '❌ <b>Failed to list images:</b> An error occurred.', botMainMenu)
+        console.error('Telegram bot list files error:', err)
+        await sendTelegramMessage(chatId, '❌ <b>Failed to list files:</b> An error occurred.', botMainMenu)
       }
     } else if (text.includes('Help') || text.includes('帮助') || text.startsWith('/help')) {
       await sendTelegramMessage(
         chatId,
-        `💬 Send me a photo or a file to upload it directly to your CraneMail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.\nUse <code>📂 My Images</code> or <code>/list</code> to see your recently uploaded images.`,
+        `💬 Send me a file to upload it directly to your CraneMail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.\nUse <code>📂 My Files</code> or <code>/files</code> to see your recently uploaded files.`,
         botMainMenu
       )
     } else {
       await sendTelegramMessage(
         chatId,
-        `💬 Send me a photo or a file to upload it directly to your CraneMail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.`,
+        `💬 Send me a file to upload it directly to your CraneMail cloud drive!\n\nUse <code>/start</code> to view configuration instructions.`,
         botMainMenu
       )
     }

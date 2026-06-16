@@ -109,7 +109,7 @@ export class SmarterMailClient {
     const rawUrl = serverUrl || process.env.NEXT_PUBLIC_SMARTERMAIL_URL || 'https://us1.workspace.org'
     // Normalize URL: remove trailing slashes
     this.serverUrl = rawUrl.replace(/\/+$/, '')
-    this.clientId = process.env.SMARTERMAIL_CLIENT_ID || 'cranemail-images-app'
+    this.clientId = process.env.SMARTERMAIL_CLIENT_ID || 'cranemail-files-app'
   }
 
   /**
