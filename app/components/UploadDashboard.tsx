@@ -12,6 +12,7 @@ import {
   User as UserIcon,
 } from 'lucide-react'
 
+import { BrandMark } from '@/app/components/BrandMark'
 import { GitHubReferral } from '@/app/components/GitHubReferral'
 import { TelegramBindModal } from '@/app/components/TelegramBindModal'
 import { ThemeToggle } from '@/app/components/ThemeToggle'
@@ -122,21 +123,7 @@ export function UploadDashboard({
         <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
           <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-primary">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  className="size-4"
-                  stroke="currentColor"
-                  strokeWidth="1.9"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M4 17l7.5-11L20 14l-5.5 3.5L11.5 11 4 17z" />
-                  <path d="M11.5 11l3 6.5" />
-                </svg>
-              </div>
+              <BrandMark />
 
               <span className="truncate text-sm font-semibold tracking-tight text-foreground">
                 CraneMail Files

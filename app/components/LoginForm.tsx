@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 
+import { BrandMark } from '@/app/components/BrandMark'
 import type { User } from '@/app/types/app'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -102,21 +103,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     <Card className="rounded-2xl border border-border bg-card shadow-(--login-shadow) ring-0 [--card-spacing:--spacing(6)]">
       <CardHeader className="gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-primary">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              className="size-5"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M4 17l7.5-11L20 14l-5.5 3.5L11.5 11 4 17z" />
-              <path d="M11.5 11l3 6.5" />
-            </svg>
-          </div>
+          <BrandMark className="size-10" />
           <div className="flex min-w-0 flex-col gap-0.5">
             <CardTitle className="text-lg font-semibold tracking-tight">
               CraneMail Files

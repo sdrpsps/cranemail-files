@@ -1,441 +1,211 @@
+<img src="public/brand/crane.svg" alt="" width="56" height="56">
+
 # CraneMail Files
 
-[English](./README.md)
+简体中文 · [English](./README.md)
 
-CraneMail Files 是一个面向 CraneMail workspace 存储的轻量文件分享面板。它可以把文件上传到指定的 CraneMail workspace 文件夹，生成公开链接，同步 workspace 中已有文件，并支持已绑定用户通过 Telegram bot 上传文件。
+**上传文件，复制链接，随时分享。**
 
-需要为这个项目准备邮箱 workspace？可以通过我的 NameCrane [推荐链接注册](https://namecrane.com/r/434/email)。
+CraneMail Files 把你的 CraneMail workspace 存储变成一个方便查找和分享的文件库。通过浏览器或 Telegram 上传图片、文档，再一键复制短链接或 Markdown，发给朋友、插入文章或用于项目文档。
 
-兼容性说明：本项目基于 CraneMail 开发和测试，但不保证兼容其他 SmarterMail 实例。
+文件保存在你的 CraneMail workspace 中。你可以把这个应用部署到自己的域名上，管理上传记录和分享链接。
 
-![preview](https://us1.workspace.org/d/v2/yaikbaKQV0odeVqFeJ1su6GLxtf2aX-x/CGVW72X7M01V)
+<!-- 在此添加网页版面板截图。 -->
 
-## 功能
+## 它能帮你做什么
 
-- 使用 CraneMail 账号登录，浏览器只保存应用自己的 session cookie，SmarterMail token 会加密保存在服务端。
-- 支持从 Web 页面上传文件到 CraneMail workspace 存储。
-- 上传后自动生成公开访问链接。
-- 支持 `/s/<code>` 格式的七位短链，复制链接和 Markdown 默认使用短链，另提供明确标注的原链接复制。
-- 支持同步 `PUBLIC_FOLDER` 下已有的 workspace 文件。
-- Web 端删除文件时会先真正删除 CraneMail workspace 文件，再清理本地记录。
-- 支持通过 Web 端临时 token 绑定 Telegram 账号。
-- Telegram bot 支持上传照片和文档。
-- Telegram bot 支持查看最近上传文件。
-- 开发环境可使用本地 SQLite，生产环境可使用 Turso/libSQL。
-- 前端基于 Next.js App Router、shadcn/ui、Tailwind CSS、lucide-react 和 sonner。
+| 你想要…… | 可以这样做 |
+| --- | --- |
+| 分享截图、图片或文档 | 拖入文件、批量选择文件，或从剪贴板直接粘贴上传。 |
+| 在文章、笔记或 README 中插图 | 从文件库复制短链接或现成的 Markdown。 |
+| 用手机快速上传 | 把照片或文档发给已绑定的 Telegram bot。 |
+| 找回以前上传的文件 | 按文件名搜索、按来源筛选，切换网格或列表视图。 |
+| 使用 workspace 中已有的文件 | 同步指定的分享目录，无需重新上传。 |
+| 整理存储空间 | 删除不需要的文件，清理空的日期目录。 |
 
-## 技术栈
+使用前需要一个支持 workspace 文件存储的 CraneMail 账号。本项目基于 CraneMail 开发和测试，不保证兼容其他 SmarterMail 服务。
 
-- Next.js 16
-- React 19
-- 基于 Next.js 的 Hono API routes
-- Drizzle ORM + libSQL/Turso 或本地 SQLite
-- shadcn/ui with Base UI primitives
-- Tailwind CSS v4
-- Telegram Bot API
+还没有账号？可以通过维护者的 [NameCrane 推荐链接](https://namecrane.com/r/434/email)注册。
 
-## 环境要求
+## 上传与分享
 
-- Node.js 20 或更新版本
-- pnpm
-- 一个可访问文件存储的 CraneMail workspace 账号
-- 可选：从 BotFather 获取 Telegram bot token
-- 可选：用于部署环境的 Turso 数据库凭据
+### 分享第一个文件
 
-## 安装
+1. 打开已部署的站点，使用 CraneMail 邮箱或用户名及密码登录。如果使用其他 CraneMail 服务器，展开 **Server Endpoint** 修改地址。
+2. 把文件拖到上传区域，点击选择文件，或直接粘贴剪贴板中的截图。
+3. 上传完成后点击 **Copy Link**。
+4. 把链接发给对方；需要插入文档时，选择 **Copy Markdown**。
 
-安装依赖：
+**Copy Link** 默认复制应用短链接，例如 `https://files.example.com/s/abc1234`。**Copy Original Link** 复制 CraneMail 原始存储链接。接收者无需登录本应用即可访问公开链接。
+
+上传的文件按日期存放在配置的分享目录中，例如 `/public/2026/11/24`，占用你的 CraneMail 存储配额。
+
+### 把 workspace 现有文件加入文件库
+
+在文件库中点击 **Sync Workspace**，扫描配置的 `PUBLIC_FOLDER` 及其子目录。尚未记录的文件会加入文件库，缺少公开链接的文件会尝试生成公开链接。
+
+**同步可能会公开该目录中原本未分享的文件。** 建议使用专门的分享目录，把私密文件放在其他位置。
+
+你可以通过搜索和来源筛选找到网页上传、Telegram 上传或 workspace 同步的文件。图片还支持放大预览。
+
+### 通过 Telegram 上传
+
+如果站点部署者已经配置 bot：
+
+1. 在面板中点击 **Link Telegram**。
+2. 输入 CraneMail 密码，生成绑定链接。
+3. 打开 bot 链接并点击 **Start**，或发送页面显示的 `/start <token>` 命令。绑定 token 在 10 分钟后过期。
+4. 给 bot 发送照片或文档，等待它回复短链接和原始存储链接。
+
+发送 `/files`、`/list` 或点击 **📂 My Files** 查看文件；发送 `/help` 查看帮助。需要保留图片原文件时，请以文档形式发送。
+
+### 公开链接与删除操作
+
+- 短链接和原始链接都属于公开链接，任何获得链接的人都可以访问文件。本应用没有给链接增加密码或有效期。
+- **删除会同时删除 CraneMail 中的实际文件和应用记录**，不只是从列表中隐藏，本应用无法撤销。
+- 短链接依赖本应用、域名和数据库。迁移或升级时，需要保留数据库中的短码记录。
+- 删除后，已有的短链接跳转可能在浏览器中缓存最多 60 秒，在共享缓存中保留最多 300 秒。删除也无法收回他人已经下载的副本。
+
+## 部署自己的站点
+
+需要 Node.js **20.9 或更新版本**、pnpm，以及支持 workspace 存储的 CraneMail 账号。Telegram 集成可按需启用。
+
+有持久磁盘的 Node 服务器可以使用本地 SQLite；Vercel 等没有持久可写文件系统的环境需要配置远程 Turso/libSQL 数据库。
+
+### 1. 安装与配置
+
+克隆或下载仓库，进入项目目录后执行：
 
 ```bash
 pnpm install
-```
-
-创建本地环境变量文件：
-
-```bash
 cp .env.example .env.local
+openssl rand -hex 32
 ```
 
-在 `.env.local` 中配置必要变量：
+把生成的随机值填入 `ENCRYPTION_KEY`。本地试用至少需要确认以下配置：
 
 ```env
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-files-app
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
-
-ENCRYPTION_KEY=replace-with-a-secure-random-secret
-
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_BOT_USERNAME=CraneMailFilesBot
-
-TURSO_DATABASE_URL=
-TURSO_AUTH_TOKEN=
+ENCRYPTION_KEY=replace-with-your-generated-key
 ```
 
-`ENCRYPTION_KEY` 应使用足够长的随机值。例如：
+公开部署时，**在构建前**把 `NEXT_PUBLIC_SITE_URL` 改为自己的 HTTPS 域名，例如 `https://files.example.com`。它用于生成短链接、canonical 地址、社交分享信息和站点地图。请填写域名根地址，不要附带路径、查询参数或锚点；修改后重新构建。
 
-```bash
-openssl rand -hex 32
-```
-
-## 环境变量
-
-`NEXT_PUBLIC_SITE_URL`
-
-用于 SEO metadata、canonical URL、Open Graph metadata，以及 `/s/<code>` 文件分享链接的公开站点地址。分享链接直接使用此变量作为基址，并移除结尾斜杠；未配置时使用本地开发地址 `http://localhost:3000`。
-
-`NEXT_PUBLIC_SMARTERMAIL_URL`
-
-CraneMail workspace 服务基础 URL。建议不要带结尾斜杠。
-
-`SMARTERMAIL_CLIENT_ID`
-
-发送给 CraneMail/SmarterMail-compatible 认证接口的 client identifier。
-
-`PUBLIC_FOLDER`
-
-用于上传和同步的 workspace 根目录。`public` 和 `/public` 都有效，应用会自动补齐开头斜杠并移除结尾斜杠。
-
-`TIMEZONE`
-
-用于按日期生成上传目录，以及 Telegram bot 中的日期格式化。
-
-`ENCRYPTION_KEY`
-
-用于加密存储的 CraneMail 密码，供 Telegram bot 在 refresh token 失效时重新认证。
-
-`TELEGRAM_BOT_TOKEN`
-
-Telegram bot token。只有在需要 bot 上传和绑定功能时才必须配置。
-
-`TELEGRAM_BOT_USERNAME`
-
-用于生成 Telegram 绑定链接的 bot 用户名。
-
-`ALLOWED_TELEGRAM_USERS`
-
-可选，逗号分隔的 Telegram user ID 或 username。配置后只有列表中的用户可以使用 bot。
-
-`TURSO_DATABASE_URL` 和 `TURSO_AUTH_TOKEN`
-
-可选的 libSQL/Turso 数据库配置。如果 `TURSO_DATABASE_URL` 为空，应用会在项目根目录写入 `local.db`。
-
-## 本地开发
-
-首次使用时，先初始化数据库，再启动开发服务器：
+### 2. 初始化数据库并启动
 
 ```bash
 pnpm db:migrate
 pnpm dev
 ```
 
-本地用 polling 模式调试 Telegram bot：
+打开 [localhost:3000](http://localhost:3000)，登录并上传一个小文件。
+
+在 Node 服务器上运行生产版本：
 
 ```bash
-pnpm dev:bot
-```
-
-`dev:bot` 会读取 `.env.local`，需要配置 `TELEGRAM_BOT_TOKEN`，启动时会删除当前 Telegram webhook，然后通过 `getUpdates` 轮询消息。它只适合本地调试 bot；调试结束后需要重新注册生产环境 webhook。
-
-打开：
-
-```text
-http://localhost:3000
-```
-
-主要路由：
-
-- `/` - 登录页
-- `/upload` - 已认证上传面板
-- `/api/*` - Hono API routes
-- `/s/<code>` - 文件公开短链
-
-## 文件短链
-
-把分享域名指向本应用，并将其配置为公开站点地址：
-
-```env
-NEXT_PUBLIC_SITE_URL=https://t.example
-```
-
-短域名的根路径 `/` 打开正常主站。文件短链格式为 `https://t.example/s/<code>`，通过 HTTP 302 跳转到原始公开文件地址，缓存头为 `Cache-Control: public, max-age=60, s-maxage=300`。非法或未知短码返回 404。删除文件后，下一次未命中缓存的请求返回 404；已缓存的跳转可能继续保留最多 60 秒（浏览器）或 300 秒（共享缓存）。
-
-Web 上传、workspace 同步和 Telegram 上传都会自动分配短码。**Copy Link**、Markdown 和上传完成项的复制默认使用短链，**Copy Original Link** 明确用于复制原始存储地址。缩略图和预览继续使用原始地址。Telegram 上传完成消息中，短链标为 **Link**，原始地址标为 **Original link**，文件列表优先展示短链。
-
-新记录保存绝对公开地址。旧记录若保存相对路径，短链解析会优先使用文件所属用户保存的邮箱服务器地址，再回退到 `NEXT_PUBLIC_SMARTERMAIL_URL`。没有所属用户的旧记录需要配置此回退地址；仍无法解析的相对路径返回 404。图片和 Markdown 嵌入可以跟随跳转访问原文件。
-
-短链功能使用标准 Next.js Node Route Handler、libSQL/Drizzle 和 HTTP 缓存头，可用于 Docker、自建 Node 或其他 Next.js 托管环境，不需要平台专有重写规则或存储服务。公开 URL 环境变量应在构建前配置，修改后需要重新构建。请为短链保留 `/s/` 前缀。
-
-## 构建
-
-正常构建：
-
-```bash
+pnpm db:migrate
 pnpm build
+pnpm start
 ```
 
-## 部署流程
+使用 SQLite 时，确保 `local.db` 位于持久磁盘上。每次启动新版本前先执行数据库迁移；应用只检查数据库是否就绪，不会在处理请求时自动建表或升级表结构。
 
-以下生产部署流程默认使用 Vercel 托管应用、Turso 作为 libSQL 数据库，并通过 Telegram Bot API webhook 接收 bot 消息。
+### 部署到 Vercel
 
-### 1. 准备生产环境参数
+1. 创建 Turso 数据库，取得数据库 URL 和访问 token。
+2. 在 Vercel 中导入仓库，使用 Next.js 项目类型。
+3. 为对应的部署环境配置下表中的环境变量，包括公开域名、稳定的加密密钥和 Turso 凭据。
+4. 安装命令使用 `pnpm install --frozen-lockfile`，构建命令使用 `pnpm db:migrate && pnpm build`。
+5. 部署后测试登录、小文件上传，以及复制出的分享链接。
 
-先确定生产环境域名。可以使用 Vercel 默认域名，也可以使用自定义域名：
+Vercel 上不要使用 `local.db` 回退存储。生产和预览环境应使用不同数据库，因为迁移命令会操作当前环境变量指向的数据库。
+
+上传大小和执行时间限制请参考[托管平台限制](https://vercel.com/docs/functions/limitations)。网页上传会经过应用服务器，因此托管平台和 CraneMail 账号的限制都会影响上传结果。
+
+### 配置项速查
+
+| 环境变量 | 应该填写什么 |
+| --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | 应用的公开根地址；为空时回退到 `http://localhost:3000`。需要在构建前配置。 |
+| `NEXT_PUBLIC_SMARTERMAIL_URL` | 默认 CraneMail 服务器，例如 `https://us1.workspace.org`。用户可在登录时修改服务器地址。 |
+| `PUBLIC_FOLDER` | 上传和同步使用的目录，默认 `/public`。建议使用专门的分享目录。 |
+| `TIMEZONE` | 日期目录和 bot 时间显示使用的时区，默认 `Asia/Shanghai`。 |
+| `ENCRYPTION_KEY` | 足够长、保密且稳定的密钥。用 `openssl rand -hex 32` 生成，并替换示例中的开发密钥。 |
+| `TURSO_DATABASE_URL` | 远程 libSQL 数据库地址；有持久磁盘的服务器可留空，使用 `local.db`。 |
+| `TURSO_AUTH_TOKEN` | 远程数据库需要的访问 token。 |
+| `TELEGRAM_BOT_TOKEN` | 可选，在 [@BotFather](https://t.me/BotFather) 创建 bot 后取得。 |
+| `TELEGRAM_BOT_USERNAME` | bot 用户名，不带 `@`，用于生成绑定链接。 |
+| `ALLOWED_TELEGRAM_USERS` | 可选，逗号分隔的 Telegram 用户 ID 或不带 `@` 的用户名。留空时，任何 Telegram 用户都可以绑定自己的 CraneMail 账号。 |
+| `SMARTERMAIL_CLIENT_ID` | 认证客户端标识，通常保留 `cranemail-files-app` 即可。 |
+
+应用会在服务端加密保存 CraneMail 密码和会话 token，用于续期登录。浏览器使用 HttpOnly 应用会话 cookie。请部署到可信服务器，妥善保管凭据，并同时备份数据库与 `ENCRYPTION_KEY`。更换密钥后，已有加密凭据无法解密，用户需要重新登录，也可能需要重新绑定 Telegram。
+
+### 启用自己的 Telegram bot
+
+通过 [@BotFather](https://t.me/BotFather) 创建 bot，配置 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_BOT_USERNAME`，然后重新部署。接收消息的公开 HTTPS 地址为：
 
 ```text
-https://your-domain.example
+https://files.example.com/api/telegram/webhook
 ```
 
-首次部署前生成一个稳定的加密密钥：
+在终端中导出实际 bot token，再注册和检查 webhook。执行前把示例域名替换为自己的站点：
 
 ```bash
-openssl rand -hex 32
+export TELEGRAM_BOT_TOKEN='your-bot-token'
+curl --fail-with-body --request POST \
+  --data-urlencode 'url=https://files.example.com/api/telegram/webhook' \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook"
+curl --fail-with-body \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
 ```
 
-请保存好这个值。不要随意轮换 `ENCRYPTION_KEY`，因为它变更后，已有的 bot 加密凭据将无法解密，除非用户重新绑定。
+检查 `result.url` 是否与部署地址一致，以及 `last_error_message` 是否报告投递问题，然后按照前面的[绑定步骤](#通过-telegram-上传)操作。
 
-### 2. 创建 Turso 数据库
+本地开发 bot 可运行 `pnpm dev:bot`。**该命令会删除 bot 当前的 webhook**，改用轮询接收消息。建议使用独立的开发 bot，或在调试结束后重新注册生产环境 webhook。
 
-打开 Turso Dashboard：
+## 常见问题
 
-```text
-https://app.turso.tech
-```
+**必须配置 Telegram 和 Turso 才能试用吗？**
 
-在 Dashboard 中创建数据库：
+不需要。本地使用 SQLite 和浏览器上传即可。需要手机上传时再启用 Telegram；托管环境需要远程数据库时再配置 Turso/libSQL。
 
-1. 点击 `Create Database`。
-2. 填写数据库名称，例如 `cranemail-files`。
-3. 选择靠近 Vercel 部署区域或主要用户的 region。
-4. 创建数据库。
+**为什么看不到 workspace 中已有的文件？**
 
-打开数据库页面并复制 database URL，格式类似：
+点击 **Sync Workspace**，并确认文件位于配置的 `PUBLIC_FOLDER` 中。刷新文件库只会重新读取应用已经记录的文件。
 
-```env
-TURSO_DATABASE_URL=libsql://...
-```
+**为什么短链接指向 localhost 或旧域名？**
 
-然后在 Dashboard 中创建 database token：
+修正 `NEXT_PUBLIC_SITE_URL`，重新构建并部署。如果要让过去分享的链接继续可用，需要保留旧域名的访问。
 
-1. 打开该数据库的 settings 或 tokens 页面。
-2. 为应用创建一个新的 token。
-3. token 显示后立即复制保存。
+**为什么上传失败？**
 
-把这两个值配置到 Vercel：
+先用小文件测试，再检查 CraneMail 剩余配额和分享权限，以及托管平台的请求大小、执行时间限制。Bot 上传还需要检查服务端日志中的 Telegram 下载或 CraneMail 上传错误。
 
-```env
-TURSO_DATABASE_URL=libsql://...
-TURSO_AUTH_TOKEN=...
-```
+**Telegram 没反应，或者提示绑定 token 无效？**
 
-数据库表由 Drizzle migration 管理，运行时仅检查数据库是否就绪。
+检查 bot token、允许用户列表和 `getWebhookInfo`，并在 10 分钟内使用新生成的绑定链接。网页和 webhook 必须连接同一个数据库。如果运行过 `pnpm dev:bot`，需要恢复 webhook。
 
-### 3. 创建 Telegram Bot
+**为什么提示 “Database is not ready”？**
 
-在 Telegram 中打开 `@BotFather`，执行：
+对部署实际使用的数据库执行 `pnpm db:migrate`，并检查数据库 URL 和 token。只重启应用不会执行数据库迁移。
 
-```text
-/newbot
-```
+**搜索引擎和社交分享会展示什么？**
 
-按 BotFather 提示创建 bot，然后保存：
+公开首页提供 canonical 地址和品牌分享图；配置了公开域名的部署只把首页加入站点地图。上传面板、API 响应和文件短链接包含 `noindex` 指令，本地地址和 Vercel 预览构建也设为 `noindex`。这些指令用于引导遵守规则的爬虫，不是访问权限控制。
 
-- Bot token，对应 `TELEGRAM_BOT_TOKEN`
-- Bot username，对应 `TELEGRAM_BOT_USERNAME`
+## 参与开发
 
-例如：
-
-```env
-TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailFilesBot
-```
-
-如果只允许特定 Telegram 账号使用 bot，可以配置：
-
-```env
-ALLOWED_TELEGRAM_USERS=123456789,some_username
-```
-
-这个值支持逗号分隔的 Telegram numeric user ID 或 username。
-
-### 4. 部署到 Vercel
-
-把仓库推送到 GitHub，然后在 Vercel 中从该仓库创建项目。
-
-项目设置建议如下：
-
-- Framework Preset: `Next.js`
-- Install Command: `pnpm install --frozen-lockfile`
-- Build Command: `pnpm db:migrate && pnpm build`
-- Output Directory: 保持 Vercel 默认值
-
-在 Vercel 中为 `Production` 配置这些环境变量：
-
-```env
-NEXT_PUBLIC_SITE_URL=https://your-domain.example
-NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-files-app
-PUBLIC_FOLDER=/public
-TIMEZONE=Asia/Shanghai
-
-ENCRYPTION_KEY=your-stable-random-secret
-
-TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailFilesBot
-ALLOWED_TELEGRAM_USERS=
-
-TURSO_DATABASE_URL=libsql://...
-TURSO_AUTH_TOKEN=...
-```
-
-添加或修改环境变量后需要重新部署。Vercel 已经构建完成的部署不会自动使用之后才修改的环境变量。
-
-生产环境必须使用 Turso。不要在 Vercel 上依赖本地 `local.db` fallback，因为 serverless 文件系统不是可靠的持久数据库。
-
-### 5. 注册 Telegram Webhook
-
-Vercel 部署可访问后，用生产环境 URL 注册 webhook：
+项目使用 Next.js App Router、React、Hono、Drizzle/libSQL、shadcn/ui 和 Tailwind CSS。
 
 ```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
+pnpm lint
+pnpm exec tsc --noEmit
+pnpm test
 ```
 
-检查 webhook 是否正确：
+修改数据库时，更新 `lib/db/schema.ts`，执行 `pnpm db:generate`，检查生成的迁移文件，再运行 `pnpm db:migrate`。使用 `pnpm db:studio` 可打开数据库浏览器。
 
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
-```
-
-返回中应包含：
-
-```json
-{
-  "ok": true,
-  "result": {
-    "url": "https://your-domain.example/api/telegram/webhook"
-  }
-}
-```
-
-如果 `url` 为空、指向了本地 tunnel、指向了其他部署，或 `last_error_message` 显示投递失败，请用正确的生产环境 URL 重新执行 `setWebhook`。
-
-注意：`pnpm dev:bot` 启动本地 polling 前会删除当前 Telegram webhook。完成本地 bot 调试后，一定要重新注册生产环境 webhook。
-
-### 6. 验证部署
-
-打开生产站点：
-
-```text
-https://your-domain.example
-```
-
-按顺序验证主要流程：
-
-1. 使用 CraneMail 账号登录。
-2. 打开 `/upload`。
-3. 从 Web dashboard 上传一个小文件。
-4. 生成 Telegram 绑定 token。
-5. 打开生成的 Telegram bot 链接，并发送 `/start <token>`。
-6. 确认 bot 返回绑定成功消息。
-7. 给 bot 发送一张照片，确认它返回 CraneMail 公开链接。
-
-Vercel logs 中应该能看到 Telegram 请求：
-
-```text
-POST /api/telegram/webhook
-```
-
-### 7. 部署排查
-
-如果 Telegram 绑定没有任何反应：
-
-- 执行 `getWebhookInfo`，确认 `url` 指向 Vercel 生产环境 endpoint。
-- 确认 Vercel `Production` 中配置了 `TELEGRAM_BOT_TOKEN`。
-- 确认修改 Vercel 环境变量后已经重新部署。
-- 查看 Vercel function logs 是否出现 `POST /api/telegram/webhook`。
-- 如果跑过 `pnpm dev:bot`，重新执行 `setWebhook`。
-
-如果能生成绑定 token，但 Telegram 提示 token 无效：
-
-- 确认 Vercel 应用使用的是生成 `bind_tokens` 的同一个 Turso 数据库。
-- 确认 `TURSO_DATABASE_URL` 和 `TURSO_AUTH_TOKEN` 配置在 `Production` 环境。
-- 重新生成绑定 token；token 会在 10 分钟后过期。
-
-如果 bot 可以绑定但不能上传：
-
-- 确认用户最近通过 Web 绑定流程验证过 CraneMail 凭据。
-- 确认 `PUBLIC_FOLDER` 存在，或应用有权限创建该目录。
-- 查看 Vercel logs 中的 SmarterMail API 错误。
-
-## 数据库
-
-应用通过 `@libsql/client` 使用 Drizzle ORM（`lib/db/schema.ts`、`lib/db/index.ts`、`drizzle.config.ts`）。以下表的结构统一由 `drizzle/` 中的迁移文件管理：
-
-- `users`
-- `app_sessions`
-- `smartermail_sessions`
-- `bind_tokens`
-- `uploaded_files`
-
-本地开发默认使用：
-
-```text
-local.db
-```
-
-生产环境建议配置 `TURSO_DATABASE_URL` 和 `TURSO_AUTH_TOKEN` 使用 Turso/libSQL。
-
-常用的 Drizzle Kit 命令（`TURSO_DATABASE_URL` 为空时默认操作 `local.db`，配置后连接 Turso）：
-
-- `pnpm db:push` - 将 schema 变更直接推送到开发数据库
-- `pnpm db:generate` - 在 `drizzle/` 下生成 SQL 迁移文件
-- `pnpm db:migrate` - 执行已生成的迁移文件
-- `pnpm db:studio` - 打开 Drizzle Studio 查看数据
-
-## CraneMail 存储行为
-
-Web 上传文件会保存到：
-
-```text
-PUBLIC_FOLDER/YYYY/MM/DD
-```
-
-例如：
-
-```text
-/public/2026/06/15
-```
-
-上传后，应用会生成 CraneMail workspace 公开链接，并把文件元数据保存到 `uploaded_files`。
-
-Workspace 同步会递归扫描 `PUBLIC_FOLDER`，并根据 `fileId` 或 `publicLink` 导入本地尚未存在的文件。
-
-从 Web 面板删除文件时，应用会先真正删除 CraneMail workspace 文件。只有 workspace API 返回删除成功后，本地数据库记录才会被移除。
-
-## Telegram Bot
-
-Bot 当前支持：
-
-- `/start <token>` - 绑定 Telegram 到 CraneMail 账号
-- 上传照片或文档 - 上传到 CraneMail 并返回公开链接
-- `/list`、`/files` 或 `📂 My Files` - 查看最近上传
-- `/help` 或 `❓ Help` - 查看帮助
-
-绑定 Telegram 账号：
-
-1. 在 Web dashboard 登录。
-2. 打开 Telegram integration 面板。
-3. 生成绑定 token。
-4. 通过生成的链接打开 bot。
-5. 向 bot 发送文件或照片。
-
-Bot 上传文件会使用同样的 CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` 目录结构，并把元数据写入同一个 `uploaded_files` 表。
-
-## 安全说明
-
-- 请妥善保护 `ENCRYPTION_KEY`、`TELEGRAM_BOT_TOKEN` 和 Turso credentials。
-- 如果 bot 只应开放给特定账号，请配置 `ALLOWED_TELEGRAM_USERS`。
-- 请谨慎轮换 `ENCRYPTION_KEY`。更换后，已有加密密码无法解密，除非你执行迁移或让用户重新绑定。
-- CraneMail workspace 文件删除是破坏性操作，本应用无法撤销。
+品牌素材及可编辑的分享图 SVG 位于 [`public/brand`](./public/brand)，站点 metadata 集中在 [`lib/site.ts`](./lib/site.ts)。

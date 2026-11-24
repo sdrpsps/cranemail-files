@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <pattern id="folds" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M0 48L48 0" stroke="#3B75F0" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="#F7F8FA"/>
+  <path d="M870 0H1200V630H760L870 0Z" fill="#2563EB"/>
+  <path d="M870 0H1200V630H760L870 0Z" fill="url(#folds)"/>
+  <g transform="translate(72 68) scale(.75)">
+    <rect width="64" height="64" rx="16" fill="#2563EB"/>
+    <path d="M10 22L29 31L31 12L43 34L47 24H52L57 29L50 28L46 42L33 49L26 40L13 44L22 33L10 22Z" fill="#FFF"/>
+    <path d="M10 22L29 31L26 40L22 33L10 22Z" fill="#DBEAFE"/>
+    <path d="M29 31L43 34L33 49L26 40L29 31Z" fill="#BFDBFE"/>
+  </g>
+  <g fill="#0F172A" font-family="Arial, Helvetica, sans-serif">
+    <text x="136" y="101" font-size="28" font-weight="700" letter-spacing="-.8">CraneMail Files</text>
+    <text x="68" y="274" font-size="80" font-weight="700" letter-spacing="-3.5">Your files.</text>
+    <text x="68" y="368" font-size="80" font-weight="700" letter-spacing="-3.5">One simple link.</text>
+    <text x="73" y="430" fill="#5B6476" font-size="25">Share from your browser or Telegram.</text>
+    <text x="73" y="558" fill="#5B6476" font-size="19">Web uploads</text>
+    <circle cx="219" cy="551" r="3" fill="#B8C5D9"/>
+    <text x="242" y="558" fill="#5B6476" font-size="19">Short links</text>
+    <circle cx="370" cy="551" r="3" fill="#B8C5D9"/>
+    <text x="393" y="558" fill="#5B6476" font-size="19">Your workspace</text>
+  </g>
+  <g transform="translate(858 180) rotate(8 136 136) scale(4.25)">
+    <path d="M10 22L29 31L31 12L43 34L47 24H52L57 29L50 28L46 42L33 49L26 40L13 44L22 33L10 22Z" fill="#FFF"/>
+    <path d="M10 22L29 31L26 40L22 33L10 22Z" fill="#DBEAFE"/>
+    <path d="M29 31L43 34L33 49L26 40L29 31Z" fill="#BFDBFE"/>
+  </g>
+</svg>

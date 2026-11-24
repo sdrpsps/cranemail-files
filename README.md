@@ -1,441 +1,211 @@
+<img src="public/brand/crane.svg" alt="" width="56" height="56">
+
 # CraneMail Files
 
-[简体中文](./README.zh-CN.md)
+[简体中文](./README.zh-CN.md) · English
 
-A focused file-sharing dashboard for CraneMail workspace storage. It uploads files into a configured CraneMail workspace folder, publishes public links, syncs existing workspace files, and supports Telegram bot uploads for linked users.
+**Upload a file. Copy a link. Share it anywhere.**
 
-Need an email workspace for this project? You can [sign up through my NameCrane referral link](https://namecrane.com/r/434/email).
+CraneMail Files turns your CraneMail workspace storage into a file-sharing library. Upload images and documents from your browser or Telegram, then copy a short link or a ready-to-paste Markdown snippet.
 
-Compatibility note: this project is developed and tested against CraneMail, but compatibility with other SmarterMail instances is not guaranteed.
+Files stay in your CraneMail workspace. You can deploy this app on your own domain to manage uploads and share links.
 
-![preview](https://us1.workspace.org/d/v2/yaikbaKQV0odeVqFeJ1su6GLxtf2aX-x/CGVW72X7M01V)
+<!-- Add a screenshot of the web dashboard here. -->
 
-## Features
+## What you can do
 
-- Sign in with a CraneMail account using an app session cookie while SmarterMail tokens are stored encrypted server-side.
-- Upload files from the web dashboard to CraneMail workspace storage.
-- Generate public links automatically after upload.
-- Share files through seven-character links at `/s/<code>`, used by default for link and Markdown copies, with an explicit original-link copy action.
-- Sync existing workspace files under `PUBLIC_FOLDER`.
-- Delete the real CraneMail workspace file first, then remove the local record.
-- Bind Telegram accounts through temporary tokens generated from the web dashboard.
-- Upload photos and documents through the Telegram bot.
-- List recent uploads from the Telegram bot.
-- Use local SQLite in development and Turso/libSQL in production.
-- Frontend built with Next.js App Router, shadcn/ui, Tailwind CSS, lucide-react, and sonner.
+| You want to… | CraneMail Files helps you… |
+| --- | --- |
+| Share a screenshot or document | Drag in files, choose several at once, or paste files from the clipboard. |
+| Add an image to a post or README | Copy a short link or Markdown directly from the file library. |
+| Upload from your phone | Send photos and documents to your linked Telegram bot. |
+| Find something you uploaded earlier | Search by filename, filter by upload source, and switch between grid and list views. |
+| Bring existing workspace files into the library | Sync your configured sharing folder without uploading the files again. |
+| Tidy up your storage | Delete unwanted files and clean up empty date folders. |
 
-## Tech Stack
+You need a CraneMail account with workspace file storage. This project is developed and tested with CraneMail; compatibility with other SmarterMail services is not guaranteed.
 
-- Next.js 16
-- React 19
-- Hono API routes on Next.js
-- Drizzle ORM with libSQL/Turso or local SQLite
-- shadcn/ui with Base UI primitives
-- Tailwind CSS v4
-- Telegram Bot API
+Need an account? You can use the maintainer's [NameCrane referral link](https://namecrane.com/r/434/email).
 
-## Requirements
+## Upload and share
 
-- Node.js 20 or newer
-- pnpm
-- A CraneMail workspace account with file storage access
-- Optional: Telegram bot token from BotFather
-- Optional: Turso database credentials for hosted deployments
+### Share your first file
 
-## Setup
+1. Open the deployed site and sign in with your CraneMail email or username and password. Expand **Server Endpoint** if you use a different CraneMail server.
+2. Drop files into the upload area, choose files, or paste a screenshot from your clipboard.
+3. Wait for the upload to finish, then choose **Copy Link**.
+4. Send the link to someone, or choose **Copy Markdown** to use it in a document.
 
-Install dependencies:
+**Copy Link** uses an app short link such as `https://files.example.com/s/abc1234`. **Copy Original Link** gives you the underlying CraneMail storage URL. Recipients do not need to sign in to this app to open a public link.
+
+Files are saved under the configured sharing folder, grouped by date, for example `/public/2026/11/24`. They use your CraneMail storage quota.
+
+### Use files already in your workspace
+
+Choose **Sync Workspace** in the file library to scan the configured `PUBLIC_FOLDER` and its subfolders. New files are added to the library, with public links generated where needed.
+
+**Sync can publish previously unshared files in that folder.** Use a dedicated sharing folder and keep private files elsewhere.
+
+Search and source filters help you find files uploaded from the web, Telegram, or workspace sync. Image files also have a larger preview.
+
+### Upload with Telegram
+
+If the site operator has configured a bot:
+
+1. Choose **Link Telegram** on the dashboard.
+2. Enter your CraneMail password to generate a binding link.
+3. Open the bot link and press **Start**, or send the displayed `/start <token>` command. The token expires after 10 minutes.
+4. Send a photo or document. The bot replies with a short link and the original storage link.
+
+Use `/files`, `/list`, or **📂 My Files** to browse your files; use `/help` for help. Send an image as a document when you want to preserve the original file.
+
+### Understand public links and deletion
+
+- Treat both short links and original links as public: anyone with the link can access the shared file. This app does not add passwords or expiry dates to links.
+- **Delete removes the actual file from CraneMail**, as well as its library record. It is not just a “hide from library” action, and this app cannot undo it.
+- Short links depend on this app, its domain, and its database. Keep the database when moving or upgrading a deployment.
+- After deletion, an existing short-link redirect can remain cached for up to 60 seconds in browsers or 300 seconds in shared caches. Deleting a file does not recall copies someone has already downloaded.
+
+## Deploy your own instance
+
+You need Node.js **20.9 or newer**, pnpm, and a CraneMail account with workspace storage. Telegram integration is optional.
+
+For a persistent Node server, you can use local SQLite. For Vercel or another host without a persistent writable filesystem, configure a remote Turso/libSQL database.
+
+### 1. Install and configure
+
+Clone or download this repository, open its directory, and run:
 
 ```bash
 pnpm install
-```
-
-Create a local environment file:
-
-```bash
 cp .env.example .env.local
+openssl rand -hex 32
 ```
 
-Configure the required values in `.env.local`:
+Put the generated value in `ENCRYPTION_KEY`. For a local trial, the essential settings are:
 
 ```env
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-files-app
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
-
-ENCRYPTION_KEY=replace-with-a-secure-random-secret
-
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_BOT_USERNAME=CraneMailFilesBot
-
-TURSO_DATABASE_URL=
-TURSO_AUTH_TOKEN=
+ENCRYPTION_KEY=replace-with-your-generated-key
 ```
 
-Use a long random value for `ENCRYPTION_KEY`. For example:
+For a public deployment, set `NEXT_PUBLIC_SITE_URL` to your HTTPS domain **before building**, for example `https://files.example.com`. It controls short links, canonical URLs, social previews, and the sitemap. Use the domain root without a path, query string, or fragment. Rebuild after changing it.
 
-```bash
-openssl rand -hex 32
-```
-
-## Environment Variables
-
-`NEXT_PUBLIC_SITE_URL`
-
-Public site origin used for SEO metadata, canonical URLs, Open Graph metadata, and file share links at `/s/<code>`. Share links use this value directly, with trailing slashes removed. If unset, local development uses `http://localhost:3000`.
-
-`NEXT_PUBLIC_SMARTERMAIL_URL`
-
-Base URL for your CraneMail workspace service. Do not include a trailing slash.
-
-`SMARTERMAIL_CLIENT_ID`
-
-Client identifier sent to the CraneMail/SmarterMail-compatible authentication endpoints.
-
-`PUBLIC_FOLDER`
-
-Workspace folder root used for uploads and sync. Both `public` and `/public` are valid. The app normalizes it to a leading slash and removes trailing slashes.
-
-`TIMEZONE`
-
-Timezone used for date-based upload folders and bot date formatting.
-
-`ENCRYPTION_KEY`
-
-Secret used to encrypt stored CraneMail passwords for Telegram bot re-authentication fallback.
-
-`TELEGRAM_BOT_TOKEN`
-
-Telegram bot token. Required only for bot upload and binding flows.
-
-`TELEGRAM_BOT_USERNAME`
-
-Telegram bot username used to generate binding links.
-
-`ALLOWED_TELEGRAM_USERS`
-
-Optional comma-separated Telegram user IDs or usernames. When set, only listed users may use the bot.
-
-`TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`
-
-Optional libSQL/Turso database settings. If `TURSO_DATABASE_URL` is empty, the app writes to `local.db` in the project root.
-
-## Development
-
-Initialize the database before starting the development server for the first time:
+### 2. Initialize the database and start
 
 ```bash
 pnpm db:migrate
 pnpm dev
 ```
 
-Run the Telegram bot locally in polling mode for debugging:
+Open [localhost:3000](http://localhost:3000), sign in, and upload a small file.
+
+For a production Node server:
 
 ```bash
-pnpm dev:bot
-```
-
-`dev:bot` loads `.env.local`, requires `TELEGRAM_BOT_TOKEN`, deletes the active Telegram webhook, and then polls `getUpdates`. Use it for local bot debugging only, and re-register the production webhook when you are done.
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-Main routes:
-
-- `/` - sign-in page
-- `/upload` - authenticated upload dashboard
-- `/api/*` - Hono API routes
-- `/s/<code>` - public file short links
-
-## Short Links
-
-Point your share domain to this application and set it as the public site origin:
-
-```env
-NEXT_PUBLIC_SITE_URL=https://t.example
-```
-
-The short domain's `/` serves the normal application. File links use `https://t.example/s/<code>` and redirect to the original public file URL with HTTP 302 and `Cache-Control: public, max-age=60, s-maxage=300`. Invalid or unknown codes return 404. A removed file returns 404 on the next uncached request; previously cached redirects can remain for up to 60 seconds in browsers or 300 seconds in shared caches.
-
-Web uploads, workspace sync, and Telegram uploads allocate short codes automatically. **Copy Link**, Markdown, and completed upload copies use short links by default. **Copy Original Link** explicitly copies the original storage URL. Thumbnails and previews continue to load the original URL. Telegram upload messages label the short URL **Link** and the storage URL **Original link**; file lists prefer short links.
-
-New records store absolute public URLs. For older relative URLs, short-link resolution uses the file owner's stored mail-server URL, then `NEXT_PUBLIC_SMARTERMAIL_URL`. Configure that fallback for records without an owner. An unresolved relative URL returns 404. Image and Markdown embeds can follow the redirect to the original file.
-
-This feature uses standard Next.js Node Route Handlers, libSQL/Drizzle, and HTTP cache headers. It works with Docker, a self-hosted Node server, or other Next.js hosting; no platform-specific rewrite or storage service is required. Set public URL variables before building and rebuild after changing them. Reserve `/s/` for short links.
-
-## Build
-
-Build the project:
-
-```bash
+pnpm db:migrate
 pnpm build
+pnpm start
 ```
 
-## Deployment
+Keep `local.db` on persistent storage if you use SQLite. Run migrations before starting a new application version; the app checks database readiness and does not create or upgrade tables on incoming requests.
 
-This production flow assumes Vercel for hosting, Turso for the libSQL database, and Telegram Bot API webhooks for bot updates.
+### Deploy to Vercel
 
-### 1. Prepare Production Values
+1. Create a Turso database and obtain its URL and access token.
+2. Import your repository into Vercel as a Next.js project.
+3. Add the environment variables below to the appropriate deployment environment, including your public domain, a stable encryption key, and the Turso credentials.
+4. Use `pnpm install --frozen-lockfile` as the install command and `pnpm db:migrate && pnpm build` as the build command.
+5. Deploy, then test sign-in, a small upload, and the copied share link.
 
-Choose the production domain first. It can be either a Vercel domain or your custom domain:
+Do not use the `local.db` fallback on Vercel. Use separate databases for production and preview deployments: the migration command targets whichever database is configured.
+
+For upload-size and execution limits, check your [hosting plan's limits](https://vercel.com/docs/functions/limitations). This app sends browser uploads through its server, so your host and CraneMail account both affect which files can be uploaded.
+
+### Configuration reference
+
+| Variable | What to set |
+| --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | Public app origin. Defaults to `http://localhost:3000` when empty. Set before building. |
+| `NEXT_PUBLIC_SMARTERMAIL_URL` | Default CraneMail server, such as `https://us1.workspace.org`. Users can change the server at sign-in. |
+| `PUBLIC_FOLDER` | Folder used for uploads and workspace sync; defaults to `/public`. Use a dedicated sharing folder. |
+| `TIMEZONE` | Timezone for date folders and bot timestamps; defaults to `Asia/Shanghai`. |
+| `ENCRYPTION_KEY` | A long, private, stable value. Generate one with `openssl rand -hex 32`; replace the example development key. |
+| `TURSO_DATABASE_URL` | Remote libSQL URL, or leave empty to use `local.db` on a persistent server. |
+| `TURSO_AUTH_TOKEN` | Access token for the remote database, when required. |
+| `TELEGRAM_BOT_TOKEN` | Optional bot token from [@BotFather](https://t.me/BotFather). |
+| `TELEGRAM_BOT_USERNAME` | Your bot's username without `@`; used to create binding links. |
+| `ALLOWED_TELEGRAM_USERS` | Optional comma-separated Telegram user IDs or usernames without `@`. Empty allows any Telegram user to bind their own CraneMail account. |
+| `SMARTERMAIL_CLIENT_ID` | Authentication client identifier; normally keep `cranemail-files-app`. |
+
+The app stores encrypted CraneMail passwords and session tokens on the server so it can renew sessions. The browser uses an HttpOnly app session cookie. Deploy only on a server you trust, keep credentials private, and back up the database together with `ENCRYPTION_KEY`. Changing that key makes existing encrypted credentials unreadable; users will need to sign in again and may need to relink Telegram.
+
+### Enable your Telegram bot
+
+Create a bot through [@BotFather](https://t.me/BotFather), configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME`, and redeploy. Your public HTTPS endpoint is:
 
 ```text
-https://your-domain.example
+https://files.example.com/api/telegram/webhook
 ```
 
-Generate a stable encryption key before the first deployment:
+Export your actual bot token in the terminal, then register and verify the webhook. Replace the example domain with your deployment:
 
 ```bash
-openssl rand -hex 32
+export TELEGRAM_BOT_TOKEN='your-bot-token'
+curl --fail-with-body --request POST \
+  --data-urlencode 'url=https://files.example.com/api/telegram/webhook' \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook"
+curl --fail-with-body \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
 ```
 
-Keep this value. Do not rotate `ENCRYPTION_KEY` casually because existing encrypted bot credentials cannot be decrypted after it changes unless users re-bind.
+Check that `result.url` matches your deployment and that `last_error_message` does not report a delivery problem. Then follow the [binding steps](#upload-with-telegram).
 
-### 2. Create a Turso Database
+For local bot development, use `pnpm dev:bot`. **This deletes the bot's active webhook** to enable polling, so use a separate development bot or register the production webhook again afterward.
 
-Open the Turso dashboard:
+## Common questions
 
-```text
-https://app.turso.tech
-```
+**Do I need Telegram or Turso to try this?**
 
-Create a database from the dashboard:
+No. Start locally with SQLite and browser uploads. Add Telegram when you need mobile uploads; add a remote database when your hosting environment requires one.
 
-1. Click `Create Database`.
-2. Name it, for example `cranemail-files`.
-3. Choose a region close to your Vercel deployment or primary users.
-4. Create the database.
+**Why are existing workspace files missing?**
 
-Open the database page and copy the database URL. It should look like:
+Choose **Sync Workspace**, and check that the files are under the configured `PUBLIC_FOLDER`. Refreshing the library only reloads files already recorded by this app.
 
-```env
-TURSO_DATABASE_URL=libsql://...
-```
+**Why do short links use localhost or an old domain?**
 
-Then create a database token from the dashboard:
+Correct `NEXT_PUBLIC_SITE_URL`, rebuild, and redeploy. Keep the old domain working if you need previously shared links to continue working.
 
-1. Open the database settings or tokens page.
-2. Create a new token for the app.
-3. Copy the token once it is shown.
+**Why does an upload fail?**
 
-Use these values for Vercel:
+Try a small file first. Check your CraneMail storage quota and sharing permissions, then your host's request-size and execution limits. For bot uploads, check the server logs for Telegram download or CraneMail upload errors.
 
-```env
-TURSO_DATABASE_URL=libsql://...
-TURSO_AUTH_TOKEN=...
-```
+**Why does Telegram not respond, or reject a binding token?**
 
-Drizzle migrations manage the database tables; runtime code only checks database readiness.
+Check the bot token, allowed-user list, and `getWebhookInfo`. Generate a fresh binding link within its 10-minute window. The web app and webhook must use the same database. If you ran `pnpm dev:bot`, restore the webhook.
 
-### 3. Create a Telegram Bot
+**Why does the app say “Database is not ready”?**
 
-In Telegram, open `@BotFather` and run:
+Run `pnpm db:migrate` against the database used by the deployment. Check the database URL and token; restarting the app alone does not apply migrations.
 
-```text
-/newbot
-```
+**What appears in search engines and social previews?**
 
-Follow BotFather's prompts, then keep:
+The public home page has a canonical URL and a branded social card. The sitemap includes only that page on a configured public deployment. The dashboard, API responses, and file short links carry `noindex` directives; localhost and Vercel preview builds are also marked `noindex`. These directives guide compliant crawlers and are not access controls.
 
-- Bot token, used as `TELEGRAM_BOT_TOKEN`
-- Bot username, used as `TELEGRAM_BOT_USERNAME`
+## Contributing and development
 
-Example:
-
-```env
-TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailFilesBot
-```
-
-If the bot should only work for specific Telegram accounts, set:
-
-```env
-ALLOWED_TELEGRAM_USERS=123456789,some_username
-```
-
-This value accepts comma-separated Telegram numeric user IDs or usernames.
-
-### 4. Deploy to Vercel
-
-Push the repository to GitHub, then create a Vercel project from that repository.
-
-Use these project settings:
-
-- Framework Preset: `Next.js`
-- Install Command: `pnpm install --frozen-lockfile`
-- Build Command: `pnpm db:migrate && pnpm build`
-- Output Directory: leave the Vercel default
-
-Configure these Vercel environment variables for `Production`:
-
-```env
-NEXT_PUBLIC_SITE_URL=https://your-domain.example
-NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-SMARTERMAIL_CLIENT_ID=cranemail-files-app
-PUBLIC_FOLDER=/public
-TIMEZONE=Asia/Shanghai
-
-ENCRYPTION_KEY=your-stable-random-secret
-
-TELEGRAM_BOT_TOKEN=123456789:...
-TELEGRAM_BOT_USERNAME=CraneMailFilesBot
-ALLOWED_TELEGRAM_USERS=
-
-TURSO_DATABASE_URL=libsql://...
-TURSO_AUTH_TOKEN=...
-```
-
-Redeploy after adding or changing environment variables. Vercel deployments do not automatically pick up environment variable changes made after a deployment has already been built.
-
-Production must use Turso. Do not rely on the local `local.db` fallback on Vercel because serverless filesystem state is not a durable database.
-
-### 5. Register the Telegram Webhook
-
-After the Vercel deployment is live, register the webhook with the production URL:
+The app uses Next.js App Router, React, Hono, Drizzle/libSQL, shadcn/ui, and Tailwind CSS.
 
 ```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.example/api/telegram/webhook"
+pnpm lint
+pnpm exec tsc --noEmit
+pnpm test
 ```
 
-Verify it:
+For database changes, update `lib/db/schema.ts`, run `pnpm db:generate`, review the generated migration, and apply it with `pnpm db:migrate`. `pnpm db:studio` opens the database browser.
 
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
-```
-
-The response should include:
-
-```json
-{
-  "ok": true,
-  "result": {
-    "url": "https://your-domain.example/api/telegram/webhook"
-  }
-}
-```
-
-If `url` is empty, points to a local tunnel, points to another deployment, or `last_error_message` reports delivery failures, run `setWebhook` again with the correct production URL.
-
-Important: `pnpm dev:bot` deletes the active Telegram webhook before it starts polling with `getUpdates`. After local bot debugging, always re-register the production webhook.
-
-### 6. Verify the Deployment
-
-Open the production site:
-
-```text
-https://your-domain.example
-```
-
-Then verify the main flows:
-
-1. Sign in with a CraneMail account.
-2. Open `/upload`.
-3. Upload a small file from the web dashboard.
-4. Generate a Telegram binding token.
-5. Open the generated Telegram bot link and send `/start <token>`.
-6. Confirm the bot replies with a successful binding message.
-7. Send a photo to the bot and confirm it returns a CraneMail public link.
-
-In Vercel logs, Telegram activity should show requests to:
-
-```text
-POST /api/telegram/webhook
-```
-
-### 7. Deployment Troubleshooting
-
-If Telegram binding does nothing:
-
-- Run `getWebhookInfo` and confirm `url` points to the Vercel production endpoint.
-- Confirm `TELEGRAM_BOT_TOKEN` is set in Vercel `Production`.
-- Confirm you redeployed after changing Vercel environment variables.
-- Check Vercel function logs for `POST /api/telegram/webhook`.
-- If you ran `pnpm dev:bot`, re-run `setWebhook`.
-
-If binding tokens are generated but Telegram says they are invalid:
-
-- Confirm the Vercel app is using the same Turso database that created the `bind_tokens` row.
-- Confirm `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are set in `Production`.
-- Generate a fresh binding token; tokens expire after 10 minutes.
-
-If the bot can bind but cannot upload:
-
-- Confirm the user's CraneMail credentials were recently verified through the web binding flow.
-- Confirm `PUBLIC_FOLDER` exists or can be created by the app.
-- Check Vercel logs for SmarterMail API errors.
-
-## Database
-
-The app uses Drizzle ORM (`lib/db/schema.ts`, `lib/db/index.ts`, `drizzle.config.ts`) over `@libsql/client`. Migrations in `drizzle/` manage the structure of these tables:
-
-- `users`
-- `app_sessions`
-- `smartermail_sessions`
-- `bind_tokens`
-- `uploaded_files`
-
-Local development uses:
-
-```text
-local.db
-```
-
-Production should use Turso/libSQL by setting `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
-
-Useful Drizzle Kit commands (targeting `local.db` when `TURSO_DATABASE_URL` is empty, or Turso when set):
-
-- `pnpm db:push` - push schema changes directly to a development database
-- `pnpm db:generate` - generate SQL migration files into `drizzle/`
-- `pnpm db:migrate` - apply generated migrations
-- `pnpm db:studio` - open Drizzle Studio to inspect data
-
-## CraneMail Storage Behavior
-
-Web uploads are stored in:
-
-```text
-PUBLIC_FOLDER/YYYY/MM/DD
-```
-
-For example:
-
-```text
-/public/2026/06/15
-```
-
-After upload, the app generates a public CraneMail workspace link and stores file metadata in `uploaded_files`.
-
-Workspace sync scans `PUBLIC_FOLDER` recursively and imports files that are not already present locally by `fileId` or `publicLink`.
-
-Deleting a file from the web dashboard performs a real CraneMail workspace file deletion first. The local database record is removed only after the workspace API reports success.
-
-## Telegram Bot
-
-The bot supports:
-
-- `/start <token>` - bind Telegram to a CraneMail account
-- Photo or document upload - upload to CraneMail and return a public link
-- `/list`, `/files`, or `📂 My Files` - list recent uploads
-- `/help` or `❓ Help` - show usage help
-
-To bind a Telegram account:
-
-1. Sign in on the web dashboard.
-2. Open the Telegram integration panel.
-3. Generate a binding token.
-4. Launch the bot from the generated link.
-5. Send files or photos to the bot.
-
-The bot stores uploads in the same CraneMail `PUBLIC_FOLDER/YYYY/MM/DD` structure and records metadata in the same `uploaded_files` table.
-
-## Security Notes
-
-- Keep `ENCRYPTION_KEY`, `TELEGRAM_BOT_TOKEN`, and Turso credentials private.
-- Use `ALLOWED_TELEGRAM_USERS` when the bot should be restricted to specific Telegram accounts.
-- Rotate `ENCRYPTION_KEY` carefully. Existing encrypted passwords cannot be decrypted after changing it unless you migrate or rebind users.
-- CraneMail workspace file deletion is destructive and cannot be undone by this app.
+Brand assets and the editable social-card SVG live in [`public/brand`](./public/brand). Site metadata is defined in [`lib/site.ts`](./lib/site.ts).
