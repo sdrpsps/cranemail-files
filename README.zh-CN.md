@@ -37,7 +37,7 @@ CraneMail Files 是一个面向 CraneMail workspace 存储的轻量文件分享�
 ## 环境要求
 
 - Node.js 20 或更新版本
-- npm
+- pnpm
 - 一个可访问文件存储的 CraneMail workspace 账号
 - 可选：从 BotFather 获取 Telegram bot token
 - 可选：用于部署环境的 Turso 数据库凭据
@@ -47,7 +47,7 @@ CraneMail Files 是一个面向 CraneMail workspace 存储的轻量文件分享�
 安装依赖：
 
 ```bash
-npm install
+pnpm install
 ```
 
 创建本地环境变量文件：
@@ -124,16 +124,17 @@ Telegram bot token。只有在需要 bot 上传和绑定功能时才必须配置
 
 ## 本地开发
 
-启动开发服务器：
+首次使用时，先初始化数据库，再启动开发服务器：
 
 ```bash
-npm run dev
+pnpm db:migrate
+pnpm dev
 ```
 
 本地用 polling 模式调试 Telegram bot：
 
 ```bash
-npm run dev:bot
+pnpm dev:bot
 ```
 
 `dev:bot` 会读取 `.env.local`，需要配置 `TELEGRAM_BOT_TOKEN`，启动时会删除当前 Telegram webhook，然后通过 `getUpdates` 轮询消息。它只适合本地调试 bot；调试结束后需要重新注册生产环境 webhook。
@@ -161,7 +162,7 @@ NEXT_PUBLIC_SITE_URL=https://t.example
 
 短域名的根路径 `/` 打开正常主站。文件短链格式为 `https://t.example/s/<code>`，通过 HTTP 302 跳转到原始公开文件地址，缓存头为 `Cache-Control: public, max-age=60, s-maxage=300`。非法或未知短码返回 404。删除文件后，下一次未命中缓存的请求返回 404；已缓存的跳转可能继续保留最多 60 秒（浏览器）或 300 秒（共享缓存）。
 
-Web 上传、workspace 同步和 Telegram 上传都会自动分配短码。升级后的第一次 API 或短链请求会为旧记录补齐短码；重复初始化不会改变已有短码。**Copy Link**、Markdown 和上传完成项的复制默认使用短链，**Copy Original Link** 明确用于复制原始存储地址。缩略图和预览继续使用原始地址。Telegram 上传完成消息中，短链标为 **Link**，原始地址标为 **Original link**，文件列表优先展示短链。
+Web 上传、workspace 同步和 Telegram 上传都会自动分配短码。**Copy Link**、Markdown 和上传完成项的复制默认使用短链，**Copy Original Link** 明确用于复制原始存储地址。缩略图和预览继续使用原始地址。Telegram 上传完成消息中，短链标为 **Link**，原始地址标为 **Original link**，文件列表优先展示短链。
 
 新记录保存绝对公开地址。旧记录若保存相对路径，短链解析会优先使用文件所属用户保存的邮箱服务器地址，再回退到 `NEXT_PUBLIC_SMARTERMAIL_URL`。没有所属用户的旧记录需要配置此回退地址；仍无法解析的相对路径返回 404。图片和 Markdown 嵌入可以跟随跳转访问原文件。
 
@@ -172,7 +173,7 @@ Web 上传、workspace 同步和 Telegram 上传都会自动分配短码。升�
 正常构建：
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ## 部署流程
@@ -229,7 +230,7 @@ TURSO_DATABASE_URL=libsql://...
 TURSO_AUTH_TOKEN=...
 ```
 
-应用启动时会自动创建所需的 `users`、`app_sessions`、`smartermail_sessions`、`bind_tokens` 和 `uploaded_files` 表，不需要单独执行 migration 命令。
+数据库表由 Drizzle migration 管理，运行时仅检查数据库是否就绪。
 
 ### 3. 创建 Telegram Bot
 
@@ -266,8 +267,8 @@ ALLOWED_TELEGRAM_USERS=123456789,some_username
 项目设置建议如下：
 
 - Framework Preset: `Next.js`
-- Install Command: `npm install`
-- Build Command: `npm run build`
+- Install Command: `pnpm install --frozen-lockfile`
+- Build Command: `pnpm db:migrate && pnpm build`
 - Output Directory: 保持 Vercel 默认值
 
 在 Vercel 中为 `Production` 配置这些环境变量：
@@ -320,7 +321,7 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"
 
 如果 `url` 为空、指向了本地 tunnel、指向了其他部署，或 `last_error_message` 显示投递失败，请用正确的生产环境 URL 重新执行 `setWebhook`。
 
-注意：`npm run dev:bot` 启动本地 polling 前会删除当前 Telegram webhook。完成本地 bot 调试后，一定要重新注册生产环境 webhook。
+注意：`pnpm dev:bot` 启动本地 polling 前会删除当前 Telegram webhook。完成本地 bot 调试后，一定要重新注册生产环境 webhook。
 
 ### 6. 验证部署
 
@@ -354,7 +355,7 @@ POST /api/telegram/webhook
 - 确认 Vercel `Production` 中配置了 `TELEGRAM_BOT_TOKEN`。
 - 确认修改 Vercel 环境变量后已经重新部署。
 - 查看 Vercel function logs 是否出现 `POST /api/telegram/webhook`。
-- 如果跑过 `npm run dev:bot`，重新执行 `setWebhook`。
+- 如果跑过 `pnpm dev:bot`，重新执行 `setWebhook`。
 
 如果能生成绑定 token，但 Telegram 提示 token 无效：
 
@@ -370,7 +371,7 @@ POST /api/telegram/webhook
 
 ## 数据库
 
-应用通过 `@libsql/client` 使用 Drizzle ORM（`lib/db/schema.ts`、`lib/db/index.ts`、`drizzle.config.ts`），并在启动时自动初始化以下表：
+应用通过 `@libsql/client` 使用 Drizzle ORM（`lib/db/schema.ts`、`lib/db/index.ts`、`drizzle.config.ts`）。以下表的结构统一由 `drizzle/` 中的迁移文件管理：
 
 - `users`
 - `app_sessions`
@@ -388,12 +389,10 @@ local.db
 
 常用的 Drizzle Kit 命令（`TURSO_DATABASE_URL` 为空时默认操作 `local.db`，配置后连接 Turso）：
 
-- `npm run db:push` - 将 schema 变更直接推送到数据库
-- `npm run db:generate` - 在 `drizzle/` 下生成 SQL 迁移文件
-- `npm run db:migrate` - 执行已生成的迁移文件
-- `npm run db:studio` - 打开 Drizzle Studio 查看数据
-
-已有的 Turso 数据库在运行时可直接兼容，无需额外执行 `db:push`；如果要在引入 Drizzle 之前创建的 Turso 数据库上运行 `db:push`，建议先做好备份，因为 SQLite 会通过重建表的方式对齐 `PRIMARY KEY NOT NULL` 和时间戳默认值。
+- `pnpm db:push` - 将 schema 变更直接推送到开发数据库
+- `pnpm db:generate` - 在 `drizzle/` 下生成 SQL 迁移文件
+- `pnpm db:migrate` - 执行已生成的迁移文件
+- `pnpm db:studio` - 打开 Drizzle Studio 查看数据
 
 ## CraneMail 存储行为
 

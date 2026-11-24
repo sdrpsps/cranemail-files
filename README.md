@@ -37,7 +37,7 @@ Compatibility note: this project is developed and tested against CraneMail, but 
 ## Requirements
 
 - Node.js 20 or newer
-- npm
+- pnpm
 - A CraneMail workspace account with file storage access
 - Optional: Telegram bot token from BotFather
 - Optional: Turso database credentials for hosted deployments
@@ -47,7 +47,7 @@ Compatibility note: this project is developed and tested against CraneMail, but 
 Install dependencies:
 
 ```bash
-npm install
+pnpm install
 ```
 
 Create a local environment file:
@@ -124,16 +124,17 @@ Optional libSQL/Turso database settings. If `TURSO_DATABASE_URL` is empty, the a
 
 ## Development
 
-Run the development server:
+Initialize the database before starting the development server for the first time:
 
 ```bash
-npm run dev
+pnpm db:migrate
+pnpm dev
 ```
 
 Run the Telegram bot locally in polling mode for debugging:
 
 ```bash
-npm run dev:bot
+pnpm dev:bot
 ```
 
 `dev:bot` loads `.env.local`, requires `TELEGRAM_BOT_TOKEN`, deletes the active Telegram webhook, and then polls `getUpdates`. Use it for local bot debugging only, and re-register the production webhook when you are done.
@@ -161,7 +162,7 @@ NEXT_PUBLIC_SITE_URL=https://t.example
 
 The short domain's `/` serves the normal application. File links use `https://t.example/s/<code>` and redirect to the original public file URL with HTTP 302 and `Cache-Control: public, max-age=60, s-maxage=300`. Invalid or unknown codes return 404. A removed file returns 404 on the next uncached request; previously cached redirects can remain for up to 60 seconds in browsers or 300 seconds in shared caches.
 
-Web uploads, workspace sync, and Telegram uploads allocate short codes automatically. Existing records receive codes during the first API or short-link request after upgrading. The upgrade is safe to repeat and preserves existing codes. **Copy Link**, Markdown, and completed upload copies use short links by default. **Copy Original Link** explicitly copies the original storage URL. Thumbnails and previews continue to load the original URL. Telegram upload messages label the short URL **Link** and the storage URL **Original link**; file lists prefer short links.
+Web uploads, workspace sync, and Telegram uploads allocate short codes automatically. **Copy Link**, Markdown, and completed upload copies use short links by default. **Copy Original Link** explicitly copies the original storage URL. Thumbnails and previews continue to load the original URL. Telegram upload messages label the short URL **Link** and the storage URL **Original link**; file lists prefer short links.
 
 New records store absolute public URLs. For older relative URLs, short-link resolution uses the file owner's stored mail-server URL, then `NEXT_PUBLIC_SMARTERMAIL_URL`. Configure that fallback for records without an owner. An unresolved relative URL returns 404. Image and Markdown embeds can follow the redirect to the original file.
 
@@ -172,7 +173,7 @@ This feature uses standard Next.js Node Route Handlers, libSQL/Drizzle, and HTTP
 Build the project:
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ## Deployment
@@ -229,7 +230,7 @@ TURSO_DATABASE_URL=libsql://...
 TURSO_AUTH_TOKEN=...
 ```
 
-The app creates the required `users`, `app_sessions`, `smartermail_sessions`, `bind_tokens`, and `uploaded_files` tables automatically on startup. There is no separate migration command.
+Drizzle migrations manage the database tables; runtime code only checks database readiness.
 
 ### 3. Create a Telegram Bot
 
@@ -266,8 +267,8 @@ Push the repository to GitHub, then create a Vercel project from that repository
 Use these project settings:
 
 - Framework Preset: `Next.js`
-- Install Command: `npm install`
-- Build Command: `npm run build`
+- Install Command: `pnpm install --frozen-lockfile`
+- Build Command: `pnpm db:migrate && pnpm build`
 - Output Directory: leave the Vercel default
 
 Configure these Vercel environment variables for `Production`:
@@ -320,7 +321,7 @@ The response should include:
 
 If `url` is empty, points to a local tunnel, points to another deployment, or `last_error_message` reports delivery failures, run `setWebhook` again with the correct production URL.
 
-Important: `npm run dev:bot` deletes the active Telegram webhook before it starts polling with `getUpdates`. After local bot debugging, always re-register the production webhook.
+Important: `pnpm dev:bot` deletes the active Telegram webhook before it starts polling with `getUpdates`. After local bot debugging, always re-register the production webhook.
 
 ### 6. Verify the Deployment
 
@@ -354,7 +355,7 @@ If Telegram binding does nothing:
 - Confirm `TELEGRAM_BOT_TOKEN` is set in Vercel `Production`.
 - Confirm you redeployed after changing Vercel environment variables.
 - Check Vercel function logs for `POST /api/telegram/webhook`.
-- If you ran `npm run dev:bot`, re-run `setWebhook`.
+- If you ran `pnpm dev:bot`, re-run `setWebhook`.
 
 If binding tokens are generated but Telegram says they are invalid:
 
@@ -370,7 +371,7 @@ If the bot can bind but cannot upload:
 
 ## Database
 
-The app uses Drizzle ORM (`lib/db/schema.ts`, `lib/db/index.ts`, `drizzle.config.ts`) over `@libsql/client`, and initializes these tables automatically on startup:
+The app uses Drizzle ORM (`lib/db/schema.ts`, `lib/db/index.ts`, `drizzle.config.ts`) over `@libsql/client`. Migrations in `drizzle/` manage the structure of these tables:
 
 - `users`
 - `app_sessions`
@@ -386,14 +387,12 @@ local.db
 
 Production should use Turso/libSQL by setting `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
 
-Useful Drizzle Kit scripts (automatically targeting `local.db` when `TURSO_DATABASE_URL` is empty, or Turso when set):
+Useful Drizzle Kit commands (targeting `local.db` when `TURSO_DATABASE_URL` is empty, or Turso when set):
 
-- `npm run db:push` - push schema changes directly to the database
-- `npm run db:generate` - generate SQL migration files into `drizzle/`
-- `npm run db:migrate` - apply generated migrations
-- `npm run db:studio` - open Drizzle Studio to inspect data
-
-Existing Turso databases work immediately at runtime without running `db:push`; if you run `db:push` against an existing Turso database created before Drizzle, back it up first because SQLite reconciles `PRIMARY KEY NOT NULL` and timestamp defaults via a table rebuild.
+- `pnpm db:push` - push schema changes directly to a development database
+- `pnpm db:generate` - generate SQL migration files into `drizzle/`
+- `pnpm db:migrate` - apply generated migrations
+- `pnpm db:studio` - open Drizzle Studio to inspect data
 
 ## CraneMail Storage Behavior
 

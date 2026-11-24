@@ -2,7 +2,7 @@ import { createClient, type Client } from '@libsql/client'
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql'
 import path from 'path'
 import * as schema from './schema'
-import { withShortCodeRetry } from '../shortlink-code'
+import migrationJournal from '../../drizzle/meta/_journal.json'
 
 // In local development, fall back to a local SQLite file: local.db in the project root
 const tursoUrl = process.env.TURSO_DATABASE_URL?.trim()
@@ -45,110 +45,25 @@ export function ensureDbInitialized(): Promise<void> {
   return globalForDb.__cranemailInitDbPromise
 }
 
-/**
- * Automatically initializes database schema tables if they do not exist.
- * This is called on API initialization so local and remote databases auto-provision.
- */
+/** Check readiness once per process. Schema changes run explicitly before deployment. */
 export async function initDb() {
   try {
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY NOT NULL,
-        email TEXT,
-        serverUrl TEXT,
-        telegramUserId TEXT,
-        encryptedPassword TEXT,
-        createdAt TEXT DEFAULT (CURRENT_TIMESTAMP),
-        updatedAt TEXT DEFAULT (CURRENT_TIMESTAMP)
-      );
-    `)
-
-    await client.execute(
-      `CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email);`,
-    )
-
-    await client.execute(
-      `CREATE UNIQUE INDEX IF NOT EXISTS users_telegramUserId_unique ON users (telegramUserId);`,
-    )
-
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS bind_tokens (
-        token TEXT PRIMARY KEY NOT NULL,
-        userId TEXT NOT NULL,
-        expiresAt TEXT,
-        createdAt TEXT DEFAULT (CURRENT_TIMESTAMP)
-      );
-    `)
-
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS app_sessions (
-        id TEXT PRIMARY KEY NOT NULL,
-        userId TEXT NOT NULL,
-        expiresAt TEXT NOT NULL,
-        createdAt TEXT DEFAULT (CURRENT_TIMESTAMP),
-        updatedAt TEXT DEFAULT (CURRENT_TIMESTAMP)
-      );
-    `)
-
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS smartermail_sessions (
-        userId TEXT PRIMARY KEY NOT NULL,
-        accessToken TEXT,
-        accessTokenExpires TEXT,
-        refreshToken TEXT,
-        refreshTokenExpires TEXT,
-        createdAt TEXT DEFAULT (CURRENT_TIMESTAMP),
-        updatedAt TEXT DEFAULT (CURRENT_TIMESTAMP)
-      );
-    `)
-
-    await client.execute(`
-      CREATE TABLE IF NOT EXISTS uploaded_files (
-        id TEXT PRIMARY KEY NOT NULL,
-        email TEXT,
-        fileId TEXT,
-        fileName TEXT,
-        publicLink TEXT,
-        shortCode TEXT,
-        size INTEGER,
-        source TEXT,
-        createdAt TEXT DEFAULT (CURRENT_TIMESTAMP)
-      );
-    `)
-
-    const columns = await client.execute('PRAGMA table_info(uploaded_files)')
-    if (!columns.rows.some((column) => column.name === 'shortCode')) {
-      try {
-        await client.execute('ALTER TABLE uploaded_files ADD COLUMN shortCode TEXT')
-      } catch (error) {
-        // Another Node process may have added the column after our PRAGMA.
-        const currentColumns = await client.execute('PRAGMA table_info(uploaded_files)')
-        if (!currentColumns.rows.some((column) => column.name === 'shortCode')) throw error
-      }
+    const history = await client.execute('SELECT MAX(created_at) AS latest FROM __drizzle_migrations')
+    const required = migrationJournal.entries[migrationJournal.entries.length - 1].when
+    if (Number(history.rows[0]?.latest ?? 0) < required) {
+      throw new Error('Database migrations are behind this application version.')
     }
-
-    await client.execute(
-      'CREATE UNIQUE INDEX IF NOT EXISTS uploaded_files_shortCode_unique ON uploaded_files (shortCode)',
+    // Selecting every mapped column also catches accidental schema drift without reading data.
+    await db.select().from(schema.users).limit(0)
+    await db.select().from(schema.appSessions).limit(0)
+    await db.select().from(schema.smartermailSessions).limit(0)
+    await db.select().from(schema.bindTokens).limit(0)
+    await db.select().from(schema.uploadedFiles).limit(0)
+  } catch (cause) {
+    throw new Error(
+      'Database is not ready. Run db:adopt for a legacy database, then db:migrate before deployment. For a new database, run db:migrate.',
+      { cause },
     )
-
-    // Small batches keep upgrades bounded even for large existing libraries.
-    for (;;) {
-      const pending = await client.execute(
-        'SELECT id FROM uploaded_files WHERE shortCode IS NULL LIMIT 100',
-      )
-      if (pending.rows.length === 0) break
-      for (const row of pending.rows) {
-        await withShortCodeRetry((code) => client.execute({
-          sql: 'UPDATE uploaded_files SET shortCode = ? WHERE id = ? AND shortCode IS NULL',
-          args: [code, row.id],
-        }))
-      }
-    }
-
-    console.log('[Database] Tables checked/created successfully.')
-  } catch (err) {
-    console.error('[Database] Failed to initialize tables:', err)
-    throw err
   }
 }
 

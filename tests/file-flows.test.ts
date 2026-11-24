@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, mock, test } from 'node:test'
 import { eq } from 'drizzle-orm'
+import { migrate } from 'drizzle-orm/libsql/migrator'
 import type { SmarterMailFileItem } from '../lib/smartermail'
 
 const tempDir = mkdtempSync(path.join(tmpdir(), 'cranemail-flows-'))
@@ -23,6 +24,7 @@ before(async () => {
   process.env.ENCRYPTION_KEY = 'isolated-test-key'
   process.env.TELEGRAM_BOT_TOKEN = 'test-token'
   database = await import('../lib/db')
+  await migrate(database.db, { migrationsFolder: './drizzle' })
   shortlinks = await import('../lib/shortlink')
   api = await import('../app/api/[[...route]]/route')
   const { SmarterMailClient } = await import('../lib/smartermail')

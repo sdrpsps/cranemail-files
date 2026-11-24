@@ -10,6 +10,7 @@
     "lint": "eslint",
     "test": "node --import tsx --test tests/*.test.ts",
     "db:generate": "drizzle-kit generate",
+    "db:adopt": "tsx scripts/adopt-db.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

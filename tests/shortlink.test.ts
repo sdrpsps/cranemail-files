@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { after, before, test } from 'node:test'
 import { eq } from 'drizzle-orm'
+import { migrate } from 'drizzle-orm/libsql/migrator'
 
 const tempDir = mkdtempSync(path.join(tmpdir(), 'cranemail-shortlink-'))
 let database: typeof import('../lib/db')
@@ -34,7 +35,11 @@ function requestCode(code: string) {
   })
 }
 
-test('a short-link request initializes a brand-new database', async () => {
+test('requests require explicit migrations and do not create tables', async () => {
+  await assert.rejects(requestCode('Unknown'), /Database is not ready/)
+  const before = await database.client.execute("SELECT name FROM sqlite_schema WHERE type = 'table'")
+  assert.equal(before.rows.length, 0)
+  await migrate(database.db, { migrationsFolder: './drizzle' })
   const response = await requestCode('Unknown')
   assert.equal(response.status, 404)
   const columns = await database.client.execute('PRAGMA table_info(uploaded_files)')
