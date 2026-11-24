@@ -1,8 +1,9 @@
+import { and, desc, eq, or } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { apiSuccess, apiError } from '@/lib/response'
-import { SmarterMailClient } from '@/lib/smartermail'
-import { db } from '@/lib/db'
+import { cleanupEmptyDateFolders, SmarterMailClient } from '@/lib/smartermail'
+import { db, uploadedFiles } from '@/lib/db'
 import nodeCrypto from 'crypto'
 import { callSmarterMail } from '../_middleware'
 
@@ -20,12 +21,13 @@ filesApp.get('/', async (c) => {
       return userData.emailAddress || user.email
     })
 
-    const result = await db.execute({
-      sql: 'SELECT * FROM uploaded_files WHERE email = ? ORDER BY createdAt DESC',
-      args: [email]
-    })
+    const files = await db
+      .select()
+      .from(uploadedFiles)
+      .where(eq(uploadedFiles.email, email))
+      .orderBy(desc(uploadedFiles.createdAt))
 
-    return apiSuccess(c, result.rows, 'Uploaded files retrieved successfully')
+    return apiSuccess(c, files, 'Uploaded files retrieved successfully')
   } catch (error) {
     console.error('Fetch files error:', error)
     if (error instanceof HTTPException) {
@@ -53,17 +55,21 @@ filesApp.delete('/:id', async (c) => {
       const email = userData.emailAddress || user.email
 
       // Check if the file belongs to this user
-      const checkRes = await db.execute({
-        sql: 'SELECT id, fileId, fileName FROM uploaded_files WHERE id = ? AND email = ? LIMIT 1',
-        args: [id, email]
-      })
+      const [file] = await db
+        .select({
+          id: uploadedFiles.id,
+          fileId: uploadedFiles.fileId,
+          fileName: uploadedFiles.fileName,
+        })
+        .from(uploadedFiles)
+        .where(and(eq(uploadedFiles.id, id), eq(uploadedFiles.email, email)))
+        .limit(1)
 
-      if (checkRes.rows.length === 0) {
+      if (!file) {
         throw new HTTPException(404, { message: 'File not found or access denied' })
       }
 
-      const file = checkRes.rows[0]
-      const fileId = typeof file.fileId === 'string' ? file.fileId : ''
+      const fileId = file.fileId || ''
       if (!fileId) {
         throw new HTTPException(409, { message: 'Cannot delete workspace file because this file record is missing a file ID' })
       }
@@ -76,15 +82,12 @@ filesApp.delete('/:id', async (c) => {
       return {
         id,
         fileId,
-        fileName: typeof file.fileName === 'string' ? file.fileName : undefined,
+        fileName: file.fileName ?? undefined,
       }
     })
 
     // Delete from local DB only after the workspace file has been deleted.
-    await db.execute({
-      sql: 'DELETE FROM uploaded_files WHERE id = ?',
-      args: [id]
-    })
+    await db.delete(uploadedFiles).where(eq(uploadedFiles.id, id))
 
     return apiSuccess(c, deleteResult, 'Workspace file deleted successfully')
   } catch (error) {
@@ -137,12 +140,18 @@ filesApp.post('/sync', async (c) => {
 
           if (publicLink) {
             // Check if the file record is already in our DB (either by fileId or publicLink)
-            const checkExist = await db.execute({
-              sql: 'SELECT id FROM uploaded_files WHERE fileId = ? OR publicLink = ? LIMIT 1',
-              args: [file.id, publicLink]
-            })
+            const [existingFile] = await db
+              .select({ id: uploadedFiles.id })
+              .from(uploadedFiles)
+              .where(
+                or(
+                  eq(uploadedFiles.fileId, file.id),
+                  eq(uploadedFiles.publicLink, publicLink),
+                ),
+              )
+              .limit(1)
 
-            if (checkExist.rows.length === 0) {
+            if (!existingFile) {
               const fileRecordId = nodeCrypto.randomUUID()
               let createdAt = new Date().toISOString()
               if (file.dateAdded) {
@@ -153,19 +162,15 @@ filesApp.post('/sync', async (c) => {
                 }
               }
 
-              await db.execute({
-                sql: `INSERT INTO uploaded_files (id, email, fileId, fileName, publicLink, size, source, createdAt)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                args: [
-                  fileRecordId,
-                  email,
-                  file.id,
-                  file.fileName,
-                  publicLink,
-                  file.size,
-                  'workspace',
-                  createdAt
-                ]
+              await db.insert(uploadedFiles).values({
+                id: fileRecordId,
+                email,
+                fileId: file.id,
+                fileName: file.fileName,
+                publicLink,
+                size: file.size,
+                source: 'workspace',
+                createdAt,
               })
               syncedCount++
             }
@@ -193,6 +198,29 @@ filesApp.post('/sync', async (c) => {
       return apiError(c, error.message, error.status)
     }
     const errorMessage = error instanceof Error ? error.message : 'An error occurred during synchronization'
+    return apiError(c, errorMessage, 500)
+  }
+})
+
+// POST /cleanup-folders
+filesApp.post('/cleanup-folders', async (c) => {
+  try {
+    const result = await callSmarterMail(c, async ({ client, accessToken }) => {
+      return cleanupEmptyDateFolders(client, accessToken)
+    })
+
+    const message =
+      result.deletedCount > 0
+        ? `Removed ${result.deletedCount} empty date folder(s)`
+        : 'No empty date folders found'
+
+    return apiSuccess(c, result, message)
+  } catch (error) {
+    console.error('Empty folder cleanup error:', error)
+    if (error instanceof HTTPException) {
+      return apiError(c, error.message, error.status)
+    }
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred while cleaning empty folders'
     return apiError(c, errorMessage, 500)
   }
 })

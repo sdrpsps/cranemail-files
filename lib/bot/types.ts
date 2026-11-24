@@ -55,21 +55,6 @@ export interface TelegramUpdate {
   callback_query?: TelegramCallbackQuery
 }
 
-export interface UploadedFileRow {
-  createdAt?: string | number | null
-  size?: number | null
-  source?: string | null
-  fileName?: string | null
-  publicLink?: string | null
-}
-
-export interface BindTokenRow {
-  token: string
-  userId: string
-  expiresAt: string
-  createdAt?: string
-}
-
 export interface UserRow {
   id: string
   email: string

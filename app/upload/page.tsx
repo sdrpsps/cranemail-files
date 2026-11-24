@@ -22,10 +22,12 @@ export default function UploadPage() {
     isDragActive,
     deletingIds,
     syncing,
+    cleaningFolders,
     copiedKey,
     fetchFiles,
     clearUploadQueue,
     syncWorkspace,
+    cleanupEmptyFolders,
     deleteFile,
     copyLink,
     copyText,
@@ -72,12 +74,14 @@ export default function UploadPage() {
           uploadQueue={uploadQueue}
           isDragActive={isDragActive}
           syncing={syncing}
+          cleaningFolders={cleaningFolders}
           deletingIds={deletingIds}
           copiedKey={copiedKey}
           onLogout={handleLogout}
           onRefreshSession={checkSession}
           onRefreshFiles={fetchFiles}
           onSyncWorkspace={syncWorkspace}
+          onCleanupEmptyFolders={cleanupEmptyFolders}
           onCopyLink={copyLink}
           onCopyText={copyText}
           onDeleteFile={deleteFile}

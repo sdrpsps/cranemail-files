@@ -1,0 +1,5 @@
+feat: add drizzle ORM configuration and migration files
+
+- Add drizzle.config.ts and initial migration SQL.
+- Replace legacy lib/db with drizzle schema (index.ts, schema.ts).
+- Update package.json scripts for drizzle.

@@ -1,4 +1,6 @@
-import { db } from '../db'
+import { eq } from 'drizzle-orm'
+import { db, users } from '../db'
+import { resolveServerUrl } from '../smartermail-session'
 import type { UserRow } from './types'
 
 export function isTelegramUserAllowed(fromId: number, fromUsername?: string) {
@@ -14,11 +16,30 @@ export function isTelegramUserAllowed(fromId: number, fromUsername?: string) {
   )
 }
 
-export async function getTelegramBoundUser(fromId: number) {
-  const userRes = await db.execute({
-    sql: 'SELECT * FROM users WHERE telegramUserId = ? LIMIT 1',
-    args: [String(fromId)],
-  })
+export async function getTelegramBoundUser(fromId: number): Promise<UserRow | undefined> {
+  const [user] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      serverUrl: users.serverUrl,
+      telegramUserId: users.telegramUserId,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+    })
+    .from(users)
+    .where(eq(users.telegramUserId, String(fromId)))
+    .limit(1)
 
-  return userRes.rows[0] as unknown as UserRow | undefined
+  if (!user || !user.email) {
+    return undefined
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    serverUrl: resolveServerUrl(user.serverUrl ?? undefined),
+    telegramUserId: user.telegramUserId,
+    createdAt: user.createdAt ?? undefined,
+    updatedAt: user.updatedAt ?? undefined,
+  }
 }

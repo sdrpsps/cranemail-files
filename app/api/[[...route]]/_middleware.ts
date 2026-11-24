@@ -1,10 +1,12 @@
+import { and, eq, gt, sql } from 'drizzle-orm'
 import { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
-import { db } from '@/lib/db'
+import { appSessions, db, users } from '@/lib/db'
 import {
   AppUser,
   callSmarterMailForUser,
+  resolveServerUrl,
   SmarterMailAuthContext,
   SmarterMailSessionError,
 } from '@/lib/smartermail-session'
@@ -39,10 +41,11 @@ export async function createAppSession(userId: string): Promise<{ id: string; ex
   const id = nodeCrypto.randomUUID()
   const expiresAt = new Date(Date.now() + APP_SESSION_DURATION_MS).toISOString()
 
-  await db.execute({
-    sql: `INSERT INTO app_sessions (id, userId, expiresAt, updatedAt)
-          VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-    args: [id, userId, expiresAt],
+  await db.insert(appSessions).values({
+    id,
+    userId,
+    expiresAt,
+    updatedAt: sql`CURRENT_TIMESTAMP`,
   })
 
   return { id, expiresAt }
@@ -56,22 +59,36 @@ export async function getCurrentUser(c: Context): Promise<AppUser | null> {
     return null
   }
 
-  const result = await db.execute({
-    sql: `SELECT users.id, users.email, users.serverUrl, users.telegramUserId, users.encryptedPassword
-          FROM app_sessions
-          JOIN users ON users.id = app_sessions.userId
-          WHERE app_sessions.id = ? AND app_sessions.expiresAt > ?
-          LIMIT 1`,
-    args: [sessionId, new Date().toISOString()],
-  })
+  const [row] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      serverUrl: users.serverUrl,
+      telegramUserId: users.telegramUserId,
+      encryptedPassword: users.encryptedPassword,
+    })
+    .from(appSessions)
+    .innerJoin(users, eq(users.id, appSessions.userId))
+    .where(
+      and(
+        eq(appSessions.id, sessionId),
+        gt(appSessions.expiresAt, new Date().toISOString()),
+      ),
+    )
+    .limit(1)
 
-  const user = result.rows[0] as unknown as AppUser | undefined
-  if (!user) {
+  if (!row || !row.email) {
     clearAuthCookies(c)
     return null
   }
 
-  return user
+  return {
+    id: row.id,
+    email: row.email,
+    serverUrl: resolveServerUrl(row.serverUrl ?? undefined),
+    telegramUserId: row.telegramUserId,
+    encryptedPassword: row.encryptedPassword,
+  }
 }
 
 export async function requireCurrentUser(c: Context): Promise<AppUser> {

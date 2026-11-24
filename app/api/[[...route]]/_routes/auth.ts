@@ -1,10 +1,11 @@
+import { eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie } from 'hono/cookie'
 import { apiSuccess, apiError } from '@/lib/response'
 import { SmarterMailClient } from '@/lib/smartermail'
 import { encrypt } from '@/lib/crypto'
-import { db } from '@/lib/db'
+import { appSessions, bindTokens, db, users } from '@/lib/db'
 import {
   resolveServerUrl,
   upsertSmarterMailSession,
@@ -40,27 +41,32 @@ authApp.post('/login', async (c) => {
     const encryptedPassword = encrypt(password)
     const newUserId = nodeCrypto.randomUUID()
 
-    await db.execute({
-      sql: `INSERT INTO users (id, email, serverUrl, encryptedPassword, updatedAt)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(email) DO UPDATE SET
-              serverUrl = excluded.serverUrl,
-              encryptedPassword = excluded.encryptedPassword,
-              updatedAt = CURRENT_TIMESTAMP`,
-      args: [
-        newUserId,
-        result.emailAddress,
-        resolvedServerUrl,
+    const [dbUser] = await db
+      .insert(users)
+      .values({
+        id: newUserId,
+        email: result.emailAddress,
+        serverUrl: resolvedServerUrl,
         encryptedPassword,
-      ],
-    })
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .onConflictDoUpdate({
+        target: users.email,
+        set: {
+          serverUrl: resolvedServerUrl,
+          encryptedPassword,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      })
+      .returning({
+        id: users.id,
+        telegramUserId: users.telegramUserId,
+      })
 
-    const userCheck = await db.execute({
-      sql: 'SELECT id, telegramUserId FROM users WHERE email = ? LIMIT 1',
-      args: [result.emailAddress],
-    })
-    const dbUser = userCheck.rows[0]
-    const userId = String(dbUser.id)
+    if (!dbUser) {
+      throw new Error('Failed to persist user record')
+    }
+    const userId = dbUser.id
 
     await upsertSmarterMailSession(userId, result)
     const appSession = await createAppSession(userId)
@@ -118,10 +124,7 @@ authApp.get('/me', async (c) => {
 authApp.post('/logout', async (c) => {
   const sessionId = getCookie(c, APP_SESSION_COOKIE)
   if (sessionId) {
-    await db.execute({
-      sql: 'DELETE FROM app_sessions WHERE id = ?',
-      args: [sessionId],
-    })
+    await db.delete(appSessions).where(eq(appSessions.id, sessionId))
   }
   clearAuthCookies(c)
   return apiSuccess(c, null, 'Successfully logged out')
@@ -154,30 +157,24 @@ authApp.post('/telegram/bind-token', async (c) => {
 
     const encryptedPassword = encrypt(password)
 
-    await db.execute({
-      sql: `UPDATE users
-            SET encryptedPassword = ?, serverUrl = ?, updatedAt = CURRENT_TIMESTAMP
-            WHERE id = ?`,
-      args: [
+    await db
+      .update(users)
+      .set({
         encryptedPassword,
         serverUrl,
-        userId,
-      ],
-    })
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(users.id, userId))
     await upsertSmarterMailSession(userId, verifyAuth)
 
     // 3. Store bind token (expires in 10 minutes)
     const token = nodeCrypto.randomUUID()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
-    await db.execute({
-      sql: `INSERT INTO bind_tokens (token, userId, expiresAt)
-            VALUES (?, ?, ?)`,
-      args: [
-        token,
-        userId,
-        expiresAt,
-      ],
+    await db.insert(bindTokens).values({
+      token,
+      userId,
+      expiresAt,
     })
 
     const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'CraneMailFilesBot'

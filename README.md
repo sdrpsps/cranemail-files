@@ -28,7 +28,7 @@ Compatibility note: this project is developed and tested against CraneMail, but 
 - Next.js 16
 - React 19
 - Hono API routes on Next.js
-- libSQL/Turso or local SQLite
+- Drizzle ORM with libSQL/Turso or local SQLite
 - shadcn/ui with Base UI primitives
 - Tailwind CSS v4
 - Telegram Bot API
@@ -352,7 +352,7 @@ If the bot can bind but cannot upload:
 
 ## Database
 
-The app initializes these tables automatically:
+The app uses Drizzle ORM (`lib/db/schema.ts`, `lib/db/index.ts`, `drizzle.config.ts`) over `@libsql/client`, and initializes these tables automatically on startup:
 
 - `users`
 - `app_sessions`
@@ -367,6 +367,15 @@ local.db
 ```
 
 Production should use Turso/libSQL by setting `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
+
+Useful Drizzle Kit scripts (automatically targeting `local.db` when `TURSO_DATABASE_URL` is empty, or Turso when set):
+
+- `npm run db:push` - push schema changes directly to the database
+- `npm run db:generate` - generate SQL migration files into `drizzle/`
+- `npm run db:migrate` - apply generated migrations
+- `npm run db:studio` - open Drizzle Studio to inspect data
+
+Existing Turso databases work immediately at runtime without running `db:push`; if you run `db:push` against an existing Turso database created before Drizzle, back it up first because SQLite reconciles `PRIMARY KEY NOT NULL` and timestamp defaults via a table rebuild.
 
 ## CraneMail Storage Behavior
 

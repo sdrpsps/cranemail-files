@@ -28,7 +28,7 @@ CraneMail Files 是一个面向 CraneMail workspace 存储的轻量文件分享�
 - Next.js 16
 - React 19
 - 基于 Next.js 的 Hono API routes
-- libSQL/Turso 或本地 SQLite
+- Drizzle ORM + libSQL/Turso 或本地 SQLite
 - shadcn/ui with Base UI primitives
 - Tailwind CSS v4
 - Telegram Bot API
@@ -352,7 +352,7 @@ POST /api/telegram/webhook
 
 ## 数据库
 
-应用会自动初始化以下表：
+应用通过 `@libsql/client` 使用 Drizzle ORM（`lib/db/schema.ts`、`lib/db/index.ts`、`drizzle.config.ts`），并在启动时自动初始化以下表：
 
 - `users`
 - `app_sessions`
@@ -367,6 +367,15 @@ local.db
 ```
 
 生产环境建议配置 `TURSO_DATABASE_URL` 和 `TURSO_AUTH_TOKEN` 使用 Turso/libSQL。
+
+常用的 Drizzle Kit 命令（`TURSO_DATABASE_URL` 为空时默认操作 `local.db`，配置后连接 Turso）：
+
+- `npm run db:push` - 将 schema 变更直接推送到数据库
+- `npm run db:generate` - 在 `drizzle/` 下生成 SQL 迁移文件
+- `npm run db:migrate` - 执行已生成的迁移文件
+- `npm run db:studio` - 打开 Drizzle Studio 查看数据
+
+已有的 Turso 数据库在运行时可直接兼容，无需额外执行 `db:push`；如果要在引入 Drizzle 之前创建的 Turso 数据库上运行 `db:push`，建议先做好备份，因为 SQLite 会通过重建表的方式对齐 `PRIMARY KEY NOT NULL` 和时间戳默认值。
 
 ## CraneMail 存储行为
 

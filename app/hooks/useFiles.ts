@@ -89,6 +89,7 @@ export function useFiles() {
   const [isDragActive, setIsDragActive] = useState(false)
   const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set())
   const [syncing, setSyncing] = useState(false)
+  const [cleaningFolders, setCleaningFolders] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
   const dragDepthRef = useRef(0)
@@ -289,6 +290,33 @@ export function useFiles() {
     }
   }, [fetchFiles])
 
+  const cleanupEmptyFolders = useCallback(async () => {
+    setCleaningFolders(true)
+    try {
+      const res = await fetch('/api/files/cleanup-folders', {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (data.success && data.data) {
+        const count = Number(data.data.deletedCount) || 0
+        if (count > 0) {
+          toast.success(
+            `Removed ${count} empty date ${count === 1 ? 'folder' : 'folders'}`,
+          )
+        } else {
+          toast.info('No empty date folders found')
+        }
+      } else {
+        toast.error(data.message || 'Failed to clean empty folders')
+      }
+    } catch (err) {
+      toast.error('Network error while cleaning empty folders.')
+      console.error(err)
+    } finally {
+      setCleaningFolders(false)
+    }
+  }, [])
+
   const deleteFile = useCallback(async (id: string) => {
     setDeletingIds((prev) => {
       const next = new Set(prev)
@@ -427,11 +455,13 @@ export function useFiles() {
     isDragActive,
     deletingIds,
     syncing,
+    cleaningFolders,
     copiedKey,
     fetchFiles,
     uploadFiles,
     clearUploadQueue,
     syncWorkspace,
+    cleanupEmptyFolders,
     deleteFile,
     copyText,
     copyLink,

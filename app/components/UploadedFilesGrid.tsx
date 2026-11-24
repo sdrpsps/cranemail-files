@@ -14,9 +14,11 @@ import {
   FileCode2,
   FileText,
   FolderSync,
+  FolderX,
   Image as ImageIcon,
   LayoutGrid,
   List,
+  MoreHorizontal,
   RefreshCw,
   Search,
   Trash2,
@@ -58,6 +60,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Empty,
   EmptyContent,
@@ -105,10 +113,12 @@ interface UploadedFilesGridProps {
   filesLoading: boolean
   filesError: string
   syncing: boolean
+  cleaningFolders: boolean
   deletingIds: Set<string>
   copiedKey: string | null
   onRefreshFiles: () => Promise<void>
   onSyncWorkspace: () => void
+  onCleanupEmptyFolders: () => Promise<void> | void
   onCopyLink: (url: string, label?: string, key?: string) => void
   onCopyText: (text: string, key?: string, label?: string) => void
   onDeleteFile: (id: string) => Promise<void> | void
@@ -505,10 +515,12 @@ export function UploadedFilesGrid({
   filesLoading,
   filesError,
   syncing,
+  cleaningFolders,
   deletingIds,
   copiedKey,
   onRefreshFiles,
   onSyncWorkspace,
+  onCleanupEmptyFolders,
   onCopyLink,
   onCopyText,
   onDeleteFile,
@@ -519,6 +531,7 @@ export function UploadedFilesGrid({
   const [currentPage, setCurrentPage] = useState(1)
   const [previewTarget, setPreviewTarget] = useState<UploadedFile | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<UploadedFile | null>(null)
+  const [confirmCleanupOpen, setConfirmCleanupOpen] = useState(false)
 
   const totalSize = useMemo(
     () => files.reduce((sum, file) => sum + (Number(file.size) || 0), 0),
@@ -568,6 +581,11 @@ export function UploadedFilesGrid({
     if (!deleteTarget) return
     await onDeleteFile(deleteTarget.id)
     setDeleteTarget(null)
+  }
+
+  const confirmCleanupFolders = async () => {
+    await onCleanupEmptyFolders()
+    setConfirmCleanupOpen(false)
   }
 
   const summaryLabel = hasActiveFilters
@@ -620,6 +638,33 @@ export function UploadedFilesGrid({
                 </TooltipTrigger>
                 <TooltipContent>Refresh library</TooltipContent>
               </Tooltip>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      disabled={cleaningFolders || syncing}
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="More workspace actions"
+                      title="More workspace actions"
+                    />
+                  }
+                >
+                  {cleaningFolders ? <Spinner /> : <MoreHorizontal />}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem
+                    onClick={() => setConfirmCleanupOpen(true)}
+                    disabled={cleaningFolders || syncing}
+                  >
+                    <FolderX />
+                    <span>Clean Empty Folders</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -1250,6 +1295,48 @@ export function UploadedFilesGrid({
                 <>
                   <Trash2 data-icon="inline-start" />
                   <span>Delete Permanently</span>
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmCleanupOpen}
+        onOpenChange={(open) => {
+          if (!open && !cleaningFolders) {
+            setConfirmCleanupOpen(false)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogMedia className="bg-muted text-muted-foreground">
+              <FolderX />
+            </AlertDialogMedia>
+            <AlertDialogTitle>Clean empty date folders?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Scans your CraneMail public upload folder and removes empty YYYY/MM/DD date folders left behind after deleting files. Non-empty folders and other custom folders are never touched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cleaningFolders}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmCleanupFolders}
+              disabled={cleaningFolders}
+            >
+              {cleaningFolders ? (
+                <>
+                  <Spinner data-icon="inline-start" />
+                  <span>Cleaning…</span>
+                </>
+              ) : (
+                <>
+                  <FolderX data-icon="inline-start" />
+                  <span>Clean Empty Folders</span>
                 </>
               )}
             </AlertDialogAction>

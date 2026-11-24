@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { apiSuccess, apiError } from '@/lib/response'
 import { SmarterMailClient } from '@/lib/smartermail'
-import { db } from '@/lib/db'
+import { db, uploadedFiles } from '@/lib/db'
 import nodeCrypto from 'crypto'
 import { callSmarterMail } from '../_middleware'
 
@@ -59,19 +59,15 @@ uploadApp.post('/', async (c) => {
     // 3. Save uploaded file metadata to database
     const fileRecordId = nodeCrypto.randomUUID()
     const createdAt = new Date().toISOString()
-    await db.execute({
-      sql: `INSERT INTO uploaded_files (id, email, fileId, fileName, publicLink, size, source, createdAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        fileRecordId,
-        uploadResult.email,
-        uploadResult.fileId,
-        fileName,
-        uploadResult.publicLink,
-        file.size,
-        'web',
-        createdAt
-      ]
+    await db.insert(uploadedFiles).values({
+      id: fileRecordId,
+      email: uploadResult.email,
+      fileId: uploadResult.fileId,
+      fileName,
+      publicLink: uploadResult.publicLink,
+      size: file.size,
+      source: 'web',
+      createdAt,
     })
 
     return apiSuccess(c, {

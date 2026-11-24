@@ -282,6 +282,90 @@ export class SmarterMailClient {
     }
   }
 
+  /**
+   * Deletes a folder from file storage.
+   * Tries full path first (`{ folder }`) and safely falls back to `{ folder: leafName, parentFolder }`
+   * only when no matching root folder exists.
+   */
+  async deleteFolder(
+    accessToken: string,
+    folderPath: string,
+    mode?: { preferred?: SmarterMailDeleteFolderMode }
+  ): Promise<SmarterMailFolderMutationResponse> {
+    const normalizedPath = normalizeFolderPath(folderPath)
+    if (normalizedPath === '/') {
+      throw new Error('Refusing to delete root file storage folder')
+    }
+
+    const segments = normalizedPath.split('/').filter(Boolean)
+    const leafName = segments.at(-1)!
+    const parentFolder = segments.length > 1
+      ? `/${segments.slice(0, -1).join('/')}`
+      : '/'
+
+    const tryFullPath = async (): Promise<SmarterMailFolderMutationResponse> => {
+      try {
+        return await this.post<SmarterMailFolderMutationResponse>(
+          'api/v1/filestorage/delete-folder',
+          { folder: normalizedPath },
+          { 'Authorization': `Bearer ${accessToken}` }
+        )
+      } catch (err) {
+        if (err instanceof SmarterMailHttpError && err.status === 400) {
+          return { success: false, message: err.message }
+        }
+        throw err
+      }
+    }
+
+    const tryLeafPath = async (): Promise<SmarterMailFolderMutationResponse> => {
+      if (parentFolder !== '/') {
+        try {
+          const rootCheck = await this.getFolder(accessToken, `/${leafName}`, 1)
+          if (rootCheck.success && rootCheck.folder) {
+            return {
+              success: false,
+              message: 'Skipped leaf-name fallback because a matching root folder exists',
+            }
+          }
+        } catch {
+          // Root folder lookup failed (e.g. 404), safe to proceed with parentFolder payload.
+        }
+      }
+
+      return this.post<SmarterMailFolderMutationResponse>(
+        'api/v1/filestorage/delete-folder',
+        { folder: leafName, parentFolder },
+        { 'Authorization': `Bearer ${accessToken}` }
+      )
+    }
+
+    if (mode?.preferred === 'full') {
+      return tryFullPath()
+    }
+    if (mode?.preferred === 'leaf') {
+      return tryLeafPath()
+    }
+
+    const fullRes = await tryFullPath()
+    if (fullRes.success) {
+      if (mode) {
+        mode.preferred = 'full'
+      }
+      return fullRes
+    }
+
+    const leafRes = await tryLeafPath()
+    if (leafRes.success) {
+      if (mode) {
+        mode.preferred = 'leaf'
+      }
+      return leafRes
+    }
+
+    return leafRes.message ? leafRes : fullRes
+  }
+
   async moveFiles(accessToken: string, fileIds: string[], newFolder: string): Promise<{ success: boolean; message?: string }> {
     return this.post<{ success: boolean; message?: string }>('api/v1/filestorage/move-files', {
       newFolder: normalizeFolderPath(newFolder),
@@ -394,15 +478,165 @@ export class SmarterMailClient {
   /**
    * Retrieves a folder's files and subfolders from file storage.
    */
-  async getFolder(accessToken: string, folderPath: string): Promise<SmarterMailFolderResponse> {
+  async getFolder(accessToken: string, folderPath: string, count = 1000): Promise<SmarterMailFolderResponse> {
     const payload = {
       folder: folderPath,
       startIndex: 0,
-      count: 1000 // retrieve up to 1000 items
+      count
     }
     return this.post<SmarterMailFolderResponse>('api/v1/filestorage/folder', payload, {
       'Authorization': `Bearer ${accessToken}`
     })
+  }
+}
+
+export type SmarterMailDeleteFolderMode = 'full' | 'leaf'
+
+export interface SmarterMailFolderMutationResponse {
+  success: boolean
+  message?: string
+  variables?: Record<string, unknown>
+}
+
+export interface EmptyFolderCleanupResult {
+  deletedCount: number
+  deletedFolders: string[]
+}
+
+const YEAR_SEGMENT_RE = /^\d{4}$/
+const MONTH_SEGMENT_RE = /^(0[1-9]|1[0-2])$/
+const DAY_SEGMENT_RE = /^(0[1-9]|[12]\d|3[01])$/
+
+function isFolderEmpty(folder: SmarterMailFolderItem): boolean {
+  return (
+    (folder.files?.length ?? 0) === 0 &&
+    (folder.subFolders?.length ?? 0) === 0 &&
+    (typeof folder.count !== 'number' || folder.count === 0)
+  )
+}
+
+function getChildName(sub: SmarterMailFolderItem): string {
+  const trimmedName = sub.name?.trim()
+  if (trimmedName) {
+    return trimmedName
+  }
+
+  const normalized = normalizeFolderPath(sub.path)
+  return normalized.split('/').filter(Boolean).at(-1) || ''
+}
+
+function joinChildPath(parentPath: string, childName: string): string {
+  return parentPath === '/' ? `/${childName}` : `${parentPath}/${childName}`
+}
+
+/**
+ * Scans strictly inside `publicFolder` and deletes empty YYYY/MM/DD date folders bottom-up.
+ * Non-date folders, non-empty folders, and `publicFolder` itself are never deleted.
+ */
+export async function cleanupEmptyDateFolders(
+  client: Pick<SmarterMailClient, 'getFolder' | 'deleteFolder'>,
+  accessToken: string,
+  publicFolder = SmarterMailClient.getPublicFolder(),
+): Promise<EmptyFolderCleanupResult> {
+  const publicRoot = normalizeFolderPath(publicFolder)
+  const rootRes = await client.getFolder(accessToken, publicRoot)
+  if (!rootRes.success || !rootRes.folder) {
+    return { deletedCount: 0, deletedFolders: [] }
+  }
+
+  const deletedFolders: string[] = []
+  const mode: { preferred?: SmarterMailDeleteFolderMode } = {}
+
+  for (const yearSub of rootRes.folder.subFolders || []) {
+    const yearName = getChildName(yearSub)
+    if (!YEAR_SEGMENT_RE.test(yearName)) {
+      continue
+    }
+
+    const yearPath = joinChildPath(publicRoot, yearName)
+    const yearRes = await client.getFolder(accessToken, yearPath)
+    if (!yearRes.success || !yearRes.folder) {
+      continue
+    }
+
+    let yearHasNonDateSubFolder = false
+    let deletedAnyMonthInYear = false
+
+    for (const monthSub of yearRes.folder.subFolders || []) {
+      const monthName = getChildName(monthSub)
+      if (!MONTH_SEGMENT_RE.test(monthName)) {
+        yearHasNonDateSubFolder = true
+        continue
+      }
+
+      const monthPath = joinChildPath(yearPath, monthName)
+      const monthRes = await client.getFolder(accessToken, monthPath)
+      if (!monthRes.success || !monthRes.folder) {
+        yearHasNonDateSubFolder = true
+        continue
+      }
+
+      let monthHasNonDateSubFolder = false
+      let deletedAnyDayInMonth = false
+
+      for (const daySub of monthRes.folder.subFolders || []) {
+        const dayName = getChildName(daySub)
+        if (!DAY_SEGMENT_RE.test(dayName)) {
+          monthHasNonDateSubFolder = true
+          continue
+        }
+
+        const dayPath = joinChildPath(monthPath, dayName)
+        const dayRes = await client.getFolder(accessToken, dayPath, 10)
+        if (dayRes.success && dayRes.folder && isFolderEmpty(dayRes.folder)) {
+          const delRes = await client.deleteFolder(accessToken, dayPath, mode)
+          if (delRes.success) {
+            deletedFolders.push(dayPath)
+            deletedAnyDayInMonth = true
+          } else {
+            console.warn(`[Cleanup] Failed to delete empty day folder "${dayPath}":`, delRes.message)
+          }
+        }
+      }
+
+      if (
+        (monthRes.folder.files?.length ?? 0) === 0 &&
+        !monthHasNonDateSubFolder &&
+        (deletedAnyDayInMonth || isFolderEmpty(monthRes.folder))
+      ) {
+        const monthCheck = await client.getFolder(accessToken, monthPath, 10)
+        if (monthCheck.success && monthCheck.folder && isFolderEmpty(monthCheck.folder)) {
+          const delRes = await client.deleteFolder(accessToken, monthPath, mode)
+          if (delRes.success) {
+            deletedFolders.push(monthPath)
+            deletedAnyMonthInYear = true
+          } else {
+            console.warn(`[Cleanup] Failed to delete empty month folder "${monthPath}":`, delRes.message)
+          }
+        }
+      }
+    }
+
+    if (
+      (yearRes.folder.files?.length ?? 0) === 0 &&
+      !yearHasNonDateSubFolder &&
+      (deletedAnyMonthInYear || isFolderEmpty(yearRes.folder))
+    ) {
+      const yearCheck = await client.getFolder(accessToken, yearPath, 10)
+      if (yearCheck.success && yearCheck.folder && isFolderEmpty(yearCheck.folder)) {
+        const delRes = await client.deleteFolder(accessToken, yearPath, mode)
+        if (delRes.success) {
+          deletedFolders.push(yearPath)
+        } else {
+          console.warn(`[Cleanup] Failed to delete empty year folder "${yearPath}":`, delRes.message)
+        }
+      }
+    }
+  }
+
+  return {
+    deletedCount: deletedFolders.length,
+    deletedFolders,
   }
 }
 
@@ -421,6 +655,7 @@ export interface SmarterMailFolderItem {
   name: string
   path: string
   size: number
+  count?: number
   subFolders: SmarterMailFolderItem[]
   files: SmarterMailFileItem[]
 }

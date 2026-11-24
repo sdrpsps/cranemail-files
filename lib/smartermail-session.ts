@@ -1,4 +1,5 @@
-import { db } from './db'
+import { and, eq, sql } from 'drizzle-orm'
+import { db, smartermailSessions, users } from './db'
 import { decrypt, encrypt } from './crypto'
 import {
   SmarterMailClient,
@@ -43,39 +44,55 @@ export function resolveServerUrl(serverUrl?: string): string {
 }
 
 export async function getUserById(userId: string): Promise<AppUser | null> {
-  const result = await db.execute({
-    sql: 'SELECT id, email, serverUrl, telegramUserId, encryptedPassword FROM users WHERE id = ? LIMIT 1',
-    args: [userId],
-  })
+  const [row] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      serverUrl: users.serverUrl,
+      telegramUserId: users.telegramUserId,
+      encryptedPassword: users.encryptedPassword,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
 
-  return (result.rows[0] as unknown as AppUser | undefined) || null
+  if (!row || !row.email) {
+    return null
+  }
+
+  return {
+    id: row.id,
+    email: row.email,
+    serverUrl: resolveServerUrl(row.serverUrl ?? undefined),
+    telegramUserId: row.telegramUserId,
+    encryptedPassword: row.encryptedPassword,
+  }
 }
 
 export async function upsertSmarterMailSession(userId: string, result: SmarterMailLoginResponse) {
-  await db.execute({
-    sql: `INSERT INTO smartermail_sessions (
-            userId,
-            accessToken,
-            accessTokenExpires,
-            refreshToken,
-            refreshTokenExpires,
-            updatedAt
-          )
-          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          ON CONFLICT(userId) DO UPDATE SET
-            accessToken = excluded.accessToken,
-            accessTokenExpires = excluded.accessTokenExpires,
-            refreshToken = excluded.refreshToken,
-            refreshTokenExpires = excluded.refreshTokenExpires,
-            updatedAt = CURRENT_TIMESTAMP`,
-    args: [
+  const encryptedAccessToken = encrypt(result.accessToken)
+  const encryptedRefreshToken = encrypt(result.refreshToken)
+
+  await db
+    .insert(smartermailSessions)
+    .values({
       userId,
-      encrypt(result.accessToken),
-      result.accessTokenExpiration,
-      encrypt(result.refreshToken),
-      result.refreshTokenExpiration,
-    ],
-  })
+      accessToken: encryptedAccessToken,
+      accessTokenExpires: result.accessTokenExpiration,
+      refreshToken: encryptedRefreshToken,
+      refreshTokenExpires: result.refreshTokenExpiration,
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    })
+    .onConflictDoUpdate({
+      target: smartermailSessions.userId,
+      set: {
+        accessToken: encryptedAccessToken,
+        accessTokenExpires: result.accessTokenExpiration,
+        refreshToken: encryptedRefreshToken,
+        refreshTokenExpires: result.refreshTokenExpiration,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      },
+    })
 }
 
 export async function getSmarterMailAuthForUser(
@@ -188,12 +205,19 @@ async function refreshOrReauthenticate(
 }
 
 async function getSessionRow(userId: string): Promise<SmarterMailSessionRow | null> {
-  const result = await db.execute({
-    sql: 'SELECT * FROM smartermail_sessions WHERE userId = ? LIMIT 1',
-    args: [userId],
-  })
+  const [row] = await db
+    .select({
+      userId: smartermailSessions.userId,
+      accessToken: smartermailSessions.accessToken,
+      accessTokenExpires: smartermailSessions.accessTokenExpires,
+      refreshToken: smartermailSessions.refreshToken,
+      refreshTokenExpires: smartermailSessions.refreshTokenExpires,
+    })
+    .from(smartermailSessions)
+    .where(eq(smartermailSessions.userId, userId))
+    .limit(1)
 
-  return (result.rows[0] as unknown as SmarterMailSessionRow | undefined) || null
+  return row ?? null
 }
 
 async function saveRefreshedSession(
@@ -204,25 +228,24 @@ async function saveRefreshedSession(
   refreshToken: string,
   refreshTokenExpires: string,
 ): Promise<boolean> {
-  const result = await db.execute({
-    sql: `UPDATE smartermail_sessions
-          SET accessToken = ?,
-              accessTokenExpires = ?,
-              refreshToken = ?,
-              refreshTokenExpires = ?,
-              updatedAt = CURRENT_TIMESTAMP
-          WHERE userId = ? AND refreshToken = ?`,
-    args: [
-      encrypt(accessToken),
+  const updated = await db
+    .update(smartermailSessions)
+    .set({
+      accessToken: encrypt(accessToken),
       accessTokenExpires,
-      encrypt(refreshToken),
+      refreshToken: encrypt(refreshToken),
       refreshTokenExpires,
-      userId,
-      oldEncryptedRefreshToken,
-    ],
-  })
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(
+      and(
+        eq(smartermailSessions.userId, userId),
+        eq(smartermailSessions.refreshToken, oldEncryptedRefreshToken),
+      ),
+    )
+    .returning({ userId: smartermailSessions.userId })
 
-  return result.rowsAffected > 0
+  return updated.length > 0
 }
 
 function shouldRefreshAccessToken(expiresStr?: string | null): boolean {

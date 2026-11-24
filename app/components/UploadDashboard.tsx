@@ -51,12 +51,14 @@ interface UploadDashboardProps {
   uploadQueue: UploadQueueItem[]
   isDragActive: boolean
   syncing: boolean
+  cleaningFolders: boolean
   deletingIds: Set<string>
   copiedKey: string | null
   onLogout: () => void
   onRefreshSession: () => Promise<void>
   onRefreshFiles: () => Promise<void>
   onSyncWorkspace: () => void
+  onCleanupEmptyFolders: () => Promise<void> | void
   onCopyLink: (url: string, label?: string, key?: string) => void
   onCopyText: (text: string, key?: string, label?: string) => void
   onDeleteFile: (id: string) => Promise<void> | void
@@ -77,12 +79,14 @@ export function UploadDashboard({
   uploadQueue,
   isDragActive,
   syncing,
+  cleaningFolders,
   deletingIds,
   copiedKey,
   onLogout,
   onRefreshSession,
   onRefreshFiles,
   onSyncWorkspace,
+  onCleanupEmptyFolders,
   onCopyLink,
   onCopyText,
   onDeleteFile,
@@ -328,10 +332,12 @@ export function UploadDashboard({
               filesLoading={filesLoading}
               filesError={filesError}
               syncing={syncing}
+              cleaningFolders={cleaningFolders}
               deletingIds={deletingIds}
               copiedKey={copiedKey}
               onRefreshFiles={onRefreshFiles}
               onSyncWorkspace={onSyncWorkspace}
+              onCleanupEmptyFolders={onCleanupEmptyFolders}
               onCopyLink={onCopyLink}
               onCopyText={onCopyText}
               onDeleteFile={onDeleteFile}

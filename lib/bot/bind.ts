@@ -1,6 +1,6 @@
-import { db } from '../db'
+import { and, eq, ne, sql } from 'drizzle-orm'
+import { bindTokens, db, users } from '../db'
 import { botMainMenu, sendTelegramMessage } from './telegram-api'
-import type { BindTokenRow } from './types'
 
 export function isStartCommand(text?: string) {
   return Boolean(text?.startsWith('/start'))
@@ -19,13 +19,13 @@ export async function handleStartCommand(chatId: number, fromId: number, text: s
 
   const token = args[1].trim()
   try {
-    const bindResult = await db.execute({
-      sql: 'SELECT * FROM bind_tokens WHERE token = ? LIMIT 1',
-      args: [token],
-    })
-    const bindToken = bindResult.rows[0] as unknown as BindTokenRow | undefined
+    const [bindToken] = await db
+      .select()
+      .from(bindTokens)
+      .where(eq(bindTokens.token, token))
+      .limit(1)
 
-    if (!bindToken || new Date(bindToken.expiresAt) < new Date()) {
+    if (!bindToken || !bindToken.expiresAt || new Date(bindToken.expiresAt) < new Date()) {
       await sendTelegramMessage(
         chatId,
         '❌ <b>Binding Failed:</b>\nInvalid or expired binding token. Please go back to the web dashboard and generate a new link.'
@@ -33,13 +33,16 @@ export async function handleStartCommand(chatId: number, fromId: number, text: s
       return
     }
 
-    const userCheck = await db.execute({
-      sql: 'SELECT id, email FROM users WHERE id = ? LIMIT 1',
-      args: [bindToken.userId],
-    })
-    const existingUser = userCheck.rows[0] as { id?: string; email?: string } | undefined
+    const [existingUser] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+      })
+      .from(users)
+      .where(eq(users.id, bindToken.userId))
+      .limit(1)
 
-    if (!existingUser?.id || !existingUser.email) {
+    if (!existingUser || !existingUser.email) {
       await sendTelegramMessage(
         chatId,
         '❌ <b>Binding Failed:</b>\nThe linked web session no longer exists. Please generate a new binding link.'
@@ -47,22 +50,25 @@ export async function handleStartCommand(chatId: number, fromId: number, text: s
       return
     }
 
-    const userId = String(existingUser.id)
+    const userId = existingUser.id
 
-    await db.execute({
-      sql: 'UPDATE users SET telegramUserId = NULL, updatedAt = CURRENT_TIMESTAMP WHERE telegramUserId = ? AND id <> ?',
-      args: [String(fromId), userId],
-    })
+    await db
+      .update(users)
+      .set({
+        telegramUserId: null,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(and(eq(users.telegramUserId, String(fromId)), ne(users.id, userId)))
 
-    await db.execute({
-      sql: 'UPDATE users SET telegramUserId = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?',
-      args: [String(fromId), userId],
-    })
+    await db
+      .update(users)
+      .set({
+        telegramUserId: String(fromId),
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(users.id, userId))
 
-    await db.execute({
-      sql: 'DELETE FROM bind_tokens WHERE token = ?',
-      args: [token],
-    })
+    await db.delete(bindTokens).where(eq(bindTokens.token, token))
 
     await sendTelegramMessage(
       chatId,

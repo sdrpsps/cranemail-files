@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 
-import { db } from '../db'
+import { db, uploadedFiles } from '../db'
 import { SmarterMailClient } from '../smartermail'
 import { getSmarterMailAuthForUser } from '../smartermail-session'
 import {
@@ -66,19 +66,15 @@ export async function handleFileUpload(chatId: number, fromId: number, fileId: s
 
     const fileRecordId = crypto.randomUUID()
     const createdAt = new Date().toISOString()
-    await db.execute({
-      sql: `INSERT INTO uploaded_files (id, email, fileId, fileName, publicLink, size, source, createdAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        fileRecordId,
-        sessionUser.email,
-        fileMeta.id,
-        fileName,
-        linkResult.publicLink,
-        fileBuffer.length,
-        'telegram',
-        createdAt
-      ]
+    await db.insert(uploadedFiles).values({
+      id: fileRecordId,
+      email: sessionUser.email,
+      fileId: fileMeta.id,
+      fileName,
+      publicLink: linkResult.publicLink,
+      size: fileBuffer.length,
+      source: 'telegram',
+      createdAt,
     })
 
     const publicUrl = `${sessionUser.serverUrl}/${linkResult.publicLink}`
