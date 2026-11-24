@@ -61,7 +61,7 @@ export async function initDb() {
     await db.select().from(schema.uploadedFiles).limit(0)
   } catch (cause) {
     throw new Error(
-      'Database is not ready. Run db:adopt for a legacy database, then db:migrate before deployment. For a new database, run db:migrate.',
+      'Database is not ready. Run pnpm db:migrate before deployment.',
       { cause },
     )
   }
