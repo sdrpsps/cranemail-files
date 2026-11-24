@@ -191,9 +191,9 @@ export function UploadDropzone({
               <ScrollArea className="max-h-56 pr-2">
                 <ul className="flex flex-col gap-1.5">
                   {uploadQueue.map((item) => {
-                    const resolvedUrl = item.publicLink
+                    const resolvedUrl = item.shortUrl || (item.publicLink
                       ? getPublicUrl(item.publicLink, serverUrl)
-                      : ''
+                      : '')
                     const copyKey = `queue-${item.id}`
                     const isCopied = copiedKey === copyKey
 
@@ -238,11 +238,11 @@ export function UploadDropzone({
                             onClick={() =>
                               onCopyLink(
                                 resolvedUrl,
-                                'Direct link copied',
+                                item.shortUrl ? 'Link copied' : 'Original link copied',
                                 copyKey,
                               )
                             }
-                            title="Copy public link"
+                            title={item.shortUrl ? 'Copy link' : 'Copy original link'}
                           >
                             {isCopied ? (
                               <>
@@ -255,7 +255,7 @@ export function UploadDropzone({
                             ) : (
                               <>
                                 <Copy data-icon="inline-start" />
-                                <span>Copy</span>
+                                <span>{item.shortUrl ? 'Copy Link' : 'Copy Original Link'}</span>
                               </>
                             )}
                           </Button>

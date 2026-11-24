@@ -1,6 +1,8 @@
 import { count, desc, eq } from 'drizzle-orm'
 import { db, uploadedFiles } from '../db'
-import { botMainMenu } from './telegram-api'
+import { getPublicUrl } from '../format'
+import { buildShortUrl } from '../shortlink'
+import { botMainMenu, escapeTelegramHtml } from './telegram-api'
 import type { UserRow } from './types'
 
 const BOT_FILES_PER_PAGE = 6
@@ -50,9 +52,12 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
     const sizeMb = ((file.size || 0) / (1024 * 1024)).toFixed(2)
     const sourceIcon = getSourceIcon(file.source)
     const publicLink = file.publicLink || ''
-    const publicUrl = `${user.serverUrl}/${publicLink}`
-    responseText += `${offset + index + 1}. <b>${file.fileName || 'Untitled'}</b> (${sizeMb} MB) ${sourceIcon}\n`
-    responseText += `🔗 <a href="${publicUrl}">${publicUrl}</a>\n`
+    const publicUrl = file.shortCode
+      ? buildShortUrl(file.shortCode)
+      : getPublicUrl(publicLink, user.serverUrl)
+    const escapedUrl = escapeTelegramHtml(publicUrl)
+    responseText += `${offset + index + 1}. <b>${escapeTelegramHtml(file.fileName || 'Untitled')}</b> (${sizeMb} MB) ${sourceIcon}\n`
+    responseText += `🔗 <a href="${escapedUrl}">${escapedUrl}</a>\n`
     responseText += `📅 <i>${dateStr}</i>\n\n`
   })
 

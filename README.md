@@ -15,6 +15,7 @@ Compatibility note: this project is developed and tested against CraneMail, but 
 - Sign in with a CraneMail account using an app session cookie while SmarterMail tokens are stored encrypted server-side.
 - Upload files from the web dashboard to CraneMail workspace storage.
 - Generate public links automatically after upload.
+- Share files through seven-character links at `/s/<code>`, used by default for link and Markdown copies, with an explicit original-link copy action.
 - Sync existing workspace files under `PUBLIC_FOLDER`.
 - Delete the real CraneMail workspace file first, then remove the local record.
 - Bind Telegram accounts through temporary tokens generated from the web dashboard.
@@ -83,7 +84,7 @@ openssl rand -hex 32
 
 `NEXT_PUBLIC_SITE_URL`
 
-Public site origin used for SEO metadata, canonical URLs, and Open Graph metadata.
+Public site origin used for SEO metadata, canonical URLs, Open Graph metadata, and file share links at `/s/<code>`. Share links use this value directly, with trailing slashes removed. If unset, local development uses `http://localhost:3000`.
 
 `NEXT_PUBLIC_SMARTERMAIL_URL`
 
@@ -148,6 +149,23 @@ Main routes:
 - `/` - sign-in page
 - `/upload` - authenticated upload dashboard
 - `/api/*` - Hono API routes
+- `/s/<code>` - public file short links
+
+## Short Links
+
+Point your share domain to this application and set it as the public site origin:
+
+```env
+NEXT_PUBLIC_SITE_URL=https://t.example
+```
+
+The short domain's `/` serves the normal application. File links use `https://t.example/s/<code>` and redirect to the original public file URL with HTTP 302 and `Cache-Control: public, max-age=60, s-maxage=300`. Invalid or unknown codes return 404. A removed file returns 404 on the next uncached request; previously cached redirects can remain for up to 60 seconds in browsers or 300 seconds in shared caches.
+
+Web uploads, workspace sync, and Telegram uploads allocate short codes automatically. Existing records receive codes during the first API or short-link request after upgrading. The upgrade is safe to repeat and preserves existing codes. **Copy Link**, Markdown, and completed upload copies use short links by default. **Copy Original Link** explicitly copies the original storage URL. Thumbnails and previews continue to load the original URL. Telegram upload messages label the short URL **Link** and the storage URL **Original link**; file lists prefer short links.
+
+New records store absolute public URLs. For older relative URLs, short-link resolution uses the file owner's stored mail-server URL, then `NEXT_PUBLIC_SMARTERMAIL_URL`. Configure that fallback for records without an owner. An unresolved relative URL returns 404. Image and Markdown embeds can follow the redirect to the original file.
+
+This feature uses standard Next.js Node Route Handlers, libSQL/Drizzle, and HTTP cache headers. It works with Docker, a self-hosted Node server, or other Next.js hosting; no platform-specific rewrite or storage service is required. Set public URL variables before building and rebuild after changing them. Reserve `/s/` for short links.
 
 ## Build
 

@@ -14,6 +14,8 @@ export interface UploadedFile {
   id: string
   fileName: string
   publicLink: string
+  shortCode?: string | null
+  shortUrl?: string
   size: number
   source: string
   createdAt: string
@@ -25,6 +27,7 @@ export interface UploadQueueItem {
   size: number
   status: 'uploading' | 'done' | 'error'
   publicLink?: string
+  shortUrl?: string
   error?: string
 }
 

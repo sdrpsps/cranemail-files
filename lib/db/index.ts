@@ -2,6 +2,7 @@ import { createClient, type Client } from '@libsql/client'
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql'
 import path from 'path'
 import * as schema from './schema'
+import { withShortCodeRetry } from '../shortlink-code'
 
 // In local development, fall back to a local SQLite file: local.db in the project root
 const tursoUrl = process.env.TURSO_DATABASE_URL?.trim()
@@ -108,11 +109,41 @@ export async function initDb() {
         fileId TEXT,
         fileName TEXT,
         publicLink TEXT,
+        shortCode TEXT,
         size INTEGER,
         source TEXT,
         createdAt TEXT DEFAULT (CURRENT_TIMESTAMP)
       );
     `)
+
+    const columns = await client.execute('PRAGMA table_info(uploaded_files)')
+    if (!columns.rows.some((column) => column.name === 'shortCode')) {
+      try {
+        await client.execute('ALTER TABLE uploaded_files ADD COLUMN shortCode TEXT')
+      } catch (error) {
+        // Another Node process may have added the column after our PRAGMA.
+        const currentColumns = await client.execute('PRAGMA table_info(uploaded_files)')
+        if (!currentColumns.rows.some((column) => column.name === 'shortCode')) throw error
+      }
+    }
+
+    await client.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS uploaded_files_shortCode_unique ON uploaded_files (shortCode)',
+    )
+
+    // Small batches keep upgrades bounded even for large existing libraries.
+    for (;;) {
+      const pending = await client.execute(
+        'SELECT id FROM uploaded_files WHERE shortCode IS NULL LIMIT 100',
+      )
+      if (pending.rows.length === 0) break
+      for (const row of pending.rows) {
+        await withShortCodeRetry((code) => client.execute({
+          sql: 'UPDATE uploaded_files SET shortCode = ? WHERE id = ? AND shortCode IS NULL',
+          args: [code, row.id],
+        }))
+      }
+    }
 
     console.log('[Database] Tables checked/created successfully.')
   } catch (err) {

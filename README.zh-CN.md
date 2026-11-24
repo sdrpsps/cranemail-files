@@ -15,6 +15,7 @@ CraneMail Files 是一个面向 CraneMail workspace 存储的轻量文件分享�
 - 使用 CraneMail 账号登录，浏览器只保存应用自己的 session cookie，SmarterMail token 会加密保存在服务端。
 - 支持从 Web 页面上传文件到 CraneMail workspace 存储。
 - 上传后自动生成公开访问链接。
+- 支持 `/s/<code>` 格式的七位短链，复制链接和 Markdown 默认使用短链，另提供明确标注的原链接复制。
 - 支持同步 `PUBLIC_FOLDER` 下已有的 workspace 文件。
 - Web 端删除文件时会先真正删除 CraneMail workspace 文件，再清理本地记录。
 - 支持通过 Web 端临时 token 绑定 Telegram 账号。
@@ -83,7 +84,7 @@ openssl rand -hex 32
 
 `NEXT_PUBLIC_SITE_URL`
 
-用于 SEO metadata、canonical URL 和 Open Graph metadata 的公开站点地址。
+用于 SEO metadata、canonical URL、Open Graph metadata，以及 `/s/<code>` 文件分享链接的公开站点地址。分享链接直接使用此变量作为基址，并移除结尾斜杠；未配置时使用本地开发地址 `http://localhost:3000`。
 
 `NEXT_PUBLIC_SMARTERMAIL_URL`
 
@@ -148,6 +149,23 @@ http://localhost:3000
 - `/` - 登录页
 - `/upload` - 已认证上传面板
 - `/api/*` - Hono API routes
+- `/s/<code>` - 文件公开短链
+
+## 文件短链
+
+把分享域名指向本应用，并将其配置为公开站点地址：
+
+```env
+NEXT_PUBLIC_SITE_URL=https://t.example
+```
+
+短域名的根路径 `/` 打开正常主站。文件短链格式为 `https://t.example/s/<code>`，通过 HTTP 302 跳转到原始公开文件地址，缓存头为 `Cache-Control: public, max-age=60, s-maxage=300`。非法或未知短码返回 404。删除文件后，下一次未命中缓存的请求返回 404；已缓存的跳转可能继续保留最多 60 秒（浏览器）或 300 秒（共享缓存）。
+
+Web 上传、workspace 同步和 Telegram 上传都会自动分配短码。升级后的第一次 API 或短链请求会为旧记录补齐短码；重复初始化不会改变已有短码。**Copy Link**、Markdown 和上传完成项的复制默认使用短链，**Copy Original Link** 明确用于复制原始存储地址。缩略图和预览继续使用原始地址。Telegram 上传完成消息中，短链标为 **Link**，原始地址标为 **Original link**，文件列表优先展示短链。
+
+新记录保存绝对公开地址。旧记录若保存相对路径，短链解析会优先使用文件所属用户保存的邮箱服务器地址，再回退到 `NEXT_PUBLIC_SMARTERMAIL_URL`。没有所属用户的旧记录需要配置此回退地址；仍无法解析的相对路径返回 404。图片和 Markdown 嵌入可以跟随跳转访问原文件。
+
+短链功能使用标准 Next.js Node Route Handler、libSQL/Drizzle 和 HTTP 缓存头，可用于 Docker、自建 Node 或其他 Next.js 托管环境，不需要平台专有重写规则或存储服务。公开 URL 环境变量应在构建前配置，修改后需要重新构建。请为短链保留 `/s/` 前缀。
 
 ## 构建
 

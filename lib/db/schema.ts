@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -42,10 +42,13 @@ export const uploadedFiles = sqliteTable('uploaded_files', {
   fileId: text('fileId'),
   fileName: text('fileName'),
   publicLink: text('publicLink'),
+  shortCode: text('shortCode'),
   size: integer('size'),
   source: text('source'),
   createdAt: text('createdAt').default(sql`(CURRENT_TIMESTAMP)`),
-})
+}, (table) => [
+  uniqueIndex('uploaded_files_shortCode_unique').on(table.shortCode),
+])
 
 export type UserRecord = typeof users.$inferSelect
 export type NewUserRecord = typeof users.$inferInsert

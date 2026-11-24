@@ -17,6 +17,7 @@ import {
   FolderX,
   Image as ImageIcon,
   LayoutGrid,
+  Link2,
   List,
   MoreHorizontal,
   RefreshCw,
@@ -127,6 +128,48 @@ interface UploadedFilesGridProps {
 const FILES_PER_PAGE = 12
 const THUMBNAIL_SIZE = 512
 const THUMBNAIL_QUALITY = 75
+
+function CopyOriginalLinkButton({
+  file,
+  publicUrl,
+  copiedKey,
+  onCopyLink,
+  compact = false,
+}: {
+  file: UploadedFile
+  publicUrl: string
+  copiedKey: string | null
+  onCopyLink: UploadedFilesGridProps['onCopyLink']
+  compact?: boolean
+}) {
+  if (!file.shortUrl) return null
+  const key = `original-${file.id}`
+  const copied = copiedKey === key
+  const button = (
+    <Button
+      type="button"
+      size={compact ? 'icon-xs' : 'sm'}
+      variant={compact ? 'ghost' : 'outline'}
+      onClick={() => onCopyLink(publicUrl, 'Original link copied to clipboard', key)}
+      aria-label={`Copy original link for ${file.fileName}`}
+    >
+      {copied ? (
+        <Check data-icon={compact ? undefined : 'inline-start'} />
+      ) : (
+        <Link2 data-icon={compact ? undefined : 'inline-start'} />
+      )}
+      {!compact && <span>{copied ? 'Copied Original Link' : 'Copy Original Link'}</span>}
+    </Button>
+  )
+
+  if (!compact) return button
+  return (
+    <Tooltip>
+      <TooltipTrigger render={button} />
+      <TooltipContent>{copied ? 'Copied original link' : 'Copy original link'}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 function normalizeSource(source: string): Exclude<FileSourceFilter, 'all'> {
   if (source === 'telegram') return 'telegram'
@@ -445,10 +488,33 @@ function ImagePreviewDialog({
             <Button
               type="button"
               size="sm"
+              onClick={() =>
+                onCopyLink(
+                  file.shortUrl || publicUrl,
+                  file.shortUrl ? 'Link copied to clipboard' : 'Original link copied to clipboard',
+                  urlKey,
+                )
+              }
+            >
+              {copiedKey === urlKey ? (
+                <>
+                  <Check data-icon="inline-start" />
+                  <span>Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy data-icon="inline-start" />
+                  <span>{file.shortUrl ? 'Copy Link' : 'Copy Original Link'}</span>
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
               variant="outline"
               onClick={() =>
                 onCopyText(
-                  getMarkdownSnippet(file.fileName, publicUrl),
+                  getMarkdownSnippet(file.fileName, file.shortUrl || publicUrl),
                   mdKey,
                   'Markdown snippet copied',
                 )
@@ -467,25 +533,12 @@ function ImagePreviewDialog({
               )}
             </Button>
 
-            <Button
-              type="button"
-              size="sm"
-              onClick={() =>
-                onCopyLink(publicUrl, 'Direct link copied', urlKey)
-              }
-            >
-              {copiedKey === urlKey ? (
-                <>
-                  <Check data-icon="inline-start" />
-                  <span>Copied URL</span>
-                </>
-              ) : (
-                <>
-                  <Copy data-icon="inline-start" />
-                  <span>Copy URL</span>
-                </>
-              )}
-            </Button>
+            <CopyOriginalLinkButton
+              file={file}
+              publicUrl={publicUrl}
+              copiedKey={copiedKey}
+              onCopyLink={onCopyLink}
+            />
 
             <Button
               size="sm"
@@ -850,13 +903,13 @@ export function UploadedFilesGrid({
                               variant="secondary"
                               onClick={() =>
                                 onCopyLink(
-                                  publicUrl,
-                                  'Direct link copied to clipboard',
+                                  file.shortUrl || publicUrl,
+                                  file.shortUrl ? 'Link copied to clipboard' : 'Original link copied to clipboard',
                                   urlKey,
                                 )
                               }
                               className="h-7 flex-1 text-xs"
-                              title="Copy direct public URL"
+                              title={file.shortUrl ? 'Copy link' : 'Copy original link'}
                             >
                               {isUrlCopied ? (
                                 <>
@@ -869,10 +922,18 @@ export function UploadedFilesGrid({
                               ) : (
                                 <>
                                   <Copy data-icon="inline-start" />
-                                  <span>Copy URL</span>
+                                  <span>{file.shortUrl ? 'Copy Link' : 'Copy Original Link'}</span>
                                 </>
                               )}
                             </Button>
+
+                            <CopyOriginalLinkButton
+                              file={file}
+                              publicUrl={publicUrl}
+                              copiedKey={copiedKey}
+                              onCopyLink={onCopyLink}
+                              compact
+                            />
 
                             <Tooltip>
                               <TooltipTrigger
@@ -885,7 +946,7 @@ export function UploadedFilesGrid({
                                       onCopyText(
                                         getMarkdownSnippet(
                                           file.fileName,
-                                          publicUrl,
+                                          file.shortUrl || publicUrl,
                                         ),
                                         mdKey,
                                         'Markdown snippet copied',
@@ -1030,8 +1091,8 @@ export function UploadedFilesGrid({
                                   variant="secondary"
                                   onClick={() =>
                                     onCopyLink(
-                                      publicUrl,
-                                      'Direct link copied to clipboard',
+                                      file.shortUrl || publicUrl,
+                                      file.shortUrl ? 'Link copied to clipboard' : 'Original link copied to clipboard',
                                       urlKey,
                                     )
                                   }
@@ -1048,10 +1109,18 @@ export function UploadedFilesGrid({
                                   ) : (
                                     <>
                                       <Copy data-icon="inline-start" />
-                                      <span>Copy</span>
+                                      <span>{file.shortUrl ? 'Copy Link' : 'Copy Original Link'}</span>
                                     </>
                                   )}
                                 </Button>
+
+                                <CopyOriginalLinkButton
+                                  file={file}
+                                  publicUrl={publicUrl}
+                                  copiedKey={copiedKey}
+                                  onCopyLink={onCopyLink}
+                                  compact
+                                />
 
                                 <Tooltip>
                                   <TooltipTrigger
@@ -1064,7 +1133,7 @@ export function UploadedFilesGrid({
                                           onCopyText(
                                             getMarkdownSnippet(
                                               file.fileName,
-                                              publicUrl,
+                                              file.shortUrl || publicUrl,
                                             ),
                                             mdKey,
                                             'Markdown snippet copied',

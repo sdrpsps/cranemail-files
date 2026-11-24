@@ -153,6 +153,8 @@ export function useFiles() {
         id: string
         fileName: string
         publicLink: string
+        shortCode?: string
+        shortUrl?: string
         createdAt?: string
       }
     } = {}
@@ -171,6 +173,8 @@ export function useFiles() {
       id: data.data.id,
       fileName: data.data.fileName,
       publicLink: data.data.publicLink,
+      shortCode: data.data.shortCode,
+      shortUrl: data.data.shortUrl,
       size: file.size,
       source: 'web',
       createdAt: data.data.createdAt || new Date().toISOString(),
@@ -220,6 +224,7 @@ export function useFiles() {
                       fileName: uploaded.fileName,
                       status: 'done',
                       publicLink: uploaded.publicLink,
+                      shortUrl: uploaded.shortUrl,
                     }
                   : q,
               ),
@@ -371,7 +376,7 @@ export function useFiles() {
 
   const copyLink = useCallback(
     async (url: string, label?: string, key?: string) => {
-      await copyText(url, key ?? url, label || 'Direct link copied to clipboard')
+      await copyText(url, key ?? url, label || 'Link copied to clipboard')
     },
     [copyText],
   )

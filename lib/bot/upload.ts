@@ -1,11 +1,13 @@
 import crypto from 'crypto'
 
-import { db, uploadedFiles } from '../db'
+import { getPublicUrl } from '../format'
+import { buildShortUrl, insertFileWithShortCode } from '../shortlink'
 import { SmarterMailClient } from '../smartermail'
 import { getSmarterMailAuthForUser } from '../smartermail-session'
 import {
   botMainMenu,
   downloadTelegramFile,
+  escapeTelegramHtml,
   getTelegramFilePath,
   sendTelegramMessage,
 } from './telegram-api'
@@ -66,23 +68,24 @@ export async function handleFileUpload(chatId: number, fromId: number, fileId: s
 
     const fileRecordId = crypto.randomUUID()
     const createdAt = new Date().toISOString()
-    await db.insert(uploadedFiles).values({
+    const publicUrl = getPublicUrl(linkResult.publicLink, sessionUser.serverUrl)
+    const shortCode = await insertFileWithShortCode({
       id: fileRecordId,
       email: sessionUser.email,
       fileId: fileMeta.id,
       fileName,
-      publicLink: linkResult.publicLink,
+      publicLink: publicUrl,
       size: fileBuffer.length,
       source: 'telegram',
       createdAt,
     })
 
-    const publicUrl = `${sessionUser.serverUrl}/${linkResult.publicLink}`
     await sendTelegramMessage(
       chatId,
       `✅ <b>File Uploaded Successfully!</b>\n\n` +
-      `<b>Name:</b> <code>${fileName}</code>\n` +
-      `<b>Link:</b> <code>${publicUrl}</code>`,
+      `<b>Name:</b> <code>${escapeTelegramHtml(fileName)}</code>\n` +
+      `<b>Link:</b> <code>${escapeTelegramHtml(buildShortUrl(shortCode))}</code>\n` +
+      `<b>Original link:</b> <code>${escapeTelegramHtml(publicUrl)}</code>`,
       botMainMenu
     )
   } catch (err) {

@@ -2,7 +2,8 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { apiSuccess, apiError } from '@/lib/response'
 import { SmarterMailClient } from '@/lib/smartermail'
-import { db, uploadedFiles } from '@/lib/db'
+import { getPublicUrl } from '@/lib/format'
+import { buildShortUrl, insertFileWithShortCode } from '@/lib/shortlink'
 import nodeCrypto from 'crypto'
 import { callSmarterMail } from '../_middleware'
 
@@ -52,14 +53,14 @@ uploadApp.post('/', async (c) => {
       return {
         email,
         fileId: fileMeta.id,
-        publicLink: linkResult.publicLink
+        publicLink: getPublicUrl(linkResult.publicLink, user.serverUrl),
       }
     })
 
     // 3. Save uploaded file metadata to database
     const fileRecordId = nodeCrypto.randomUUID()
     const createdAt = new Date().toISOString()
-    await db.insert(uploadedFiles).values({
+    const shortCode = await insertFileWithShortCode({
       id: fileRecordId,
       email: uploadResult.email,
       fileId: uploadResult.fileId,
@@ -74,6 +75,8 @@ uploadApp.post('/', async (c) => {
       id: fileRecordId,
       fileName,
       publicLink: uploadResult.publicLink,
+      shortCode,
+      shortUrl: buildShortUrl(shortCode),
       size: file.size,
       createdAt,
     }, 'File uploaded successfully')

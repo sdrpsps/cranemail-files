@@ -4,6 +4,8 @@ import { HTTPException } from 'hono/http-exception'
 import { apiSuccess, apiError } from '@/lib/response'
 import { cleanupEmptyDateFolders, SmarterMailClient } from '@/lib/smartermail'
 import { db, uploadedFiles } from '@/lib/db'
+import { getPublicUrl } from '@/lib/format'
+import { assignShortCode, buildShortUrl, insertFileWithShortCode } from '@/lib/shortlink'
 import nodeCrypto from 'crypto'
 import { callSmarterMail } from '../_middleware'
 
@@ -27,7 +29,10 @@ filesApp.get('/', async (c) => {
       .where(eq(uploadedFiles.email, email))
       .orderBy(desc(uploadedFiles.createdAt))
 
-    return apiSuccess(c, files, 'Uploaded files retrieved successfully')
+    return apiSuccess(c, files.map((file) => ({
+      ...file,
+      shortUrl: file.shortCode ? buildShortUrl(file.shortCode) : undefined,
+    })), 'Uploaded files retrieved successfully')
   } catch (error) {
     console.error('Fetch files error:', error)
     if (error instanceof HTTPException) {
@@ -139,14 +144,19 @@ filesApp.post('/sync', async (c) => {
           }
 
           if (publicLink) {
+            const publicUrl = getPublicUrl(publicLink, user.serverUrl)
             // Check if the file record is already in our DB (either by fileId or publicLink)
             const [existingFile] = await db
-              .select({ id: uploadedFiles.id })
+              .select({ id: uploadedFiles.id, shortCode: uploadedFiles.shortCode })
               .from(uploadedFiles)
               .where(
-                or(
-                  eq(uploadedFiles.fileId, file.id),
-                  eq(uploadedFiles.publicLink, publicLink),
+                and(
+                  eq(uploadedFiles.email, email),
+                  or(
+                    eq(uploadedFiles.fileId, file.id),
+                    eq(uploadedFiles.publicLink, publicLink),
+                    eq(uploadedFiles.publicLink, publicUrl),
+                  ),
                 ),
               )
               .limit(1)
@@ -162,17 +172,19 @@ filesApp.post('/sync', async (c) => {
                 }
               }
 
-              await db.insert(uploadedFiles).values({
+              await insertFileWithShortCode({
                 id: fileRecordId,
                 email,
                 fileId: file.id,
                 fileName: file.fileName,
-                publicLink,
+                publicLink: publicUrl,
                 size: file.size,
                 source: 'workspace',
                 createdAt,
               })
               syncedCount++
+            } else if (!existingFile.shortCode) {
+              await assignShortCode(existingFile.id)
             }
           }
         }

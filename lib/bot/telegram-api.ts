@@ -6,6 +6,10 @@ export function hasBotToken() {
   return Boolean(getBotToken())
 }
 
+export function escapeTelegramHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 export const botMainMenu = {
   keyboard: [
     [{ text: '📂 My Files' }, { text: '❓ Help' }]
