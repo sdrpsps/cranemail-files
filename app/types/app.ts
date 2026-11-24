@@ -18,3 +18,18 @@ export interface UploadedFile {
   source: string
   createdAt: string
 }
+
+export interface UploadQueueItem {
+  id: string
+  fileName: string
+  size: number
+  status: 'uploading' | 'done' | 'error'
+  publicLink?: string
+  error?: string
+}
+
+export type FileSourceFilter = 'all' | 'web' | 'telegram' | 'workspace'
+
+export type FileTypeFilter = 'all' | 'image' | 'document'
+
+export type FileViewMode = 'grid' | 'list'

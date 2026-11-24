@@ -1,8 +1,21 @@
-export function LoadingState() {
+import { Card } from '@/components/ui/card'
+import { Spinner } from '@/components/ui/spinner'
+
+interface LoadingStateProps {
+  label?: string
+}
+
+export function LoadingState({
+  label = 'Checking workspace session…',
+}: LoadingStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center space-y-4 py-12">
-      <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500/30 border-t-blue-500" />
-      <p className="text-sm tracking-wide text-zinc-400">Syncing session...</p>
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3.5 py-12">
+      <Card className="size-11 items-center justify-center border border-border bg-card p-0 shadow-sm ring-0">
+        <Spinner className="size-5 text-primary" />
+      </Card>
+      <p className="text-xs font-medium tracking-wide text-muted-foreground">
+        {label}
+      </p>
     </div>
   )
 }

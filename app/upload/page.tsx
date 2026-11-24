@@ -18,16 +18,21 @@ export default function UploadPage() {
     filesError,
     uploading,
     uploadError,
+    uploadQueue,
     isDragActive,
     deletingIds,
     syncing,
+    copiedKey,
     fetchFiles,
+    clearUploadQueue,
     syncWorkspace,
     deleteFile,
     copyLink,
+    copyText,
     handleDrag,
     handleDrop,
     handleFileChange,
+    handlePasteFiles,
     setFiles,
   } = useFiles()
 
@@ -38,12 +43,14 @@ export default function UploadPage() {
   }, [loading, router, user])
 
   useEffect(() => {
+    if (loading) return
+
     if (user) {
       fetchFiles()
     } else {
       setFiles([])
     }
-  }, [user, fetchFiles, setFiles])
+  }, [loading, user, fetchFiles, setFiles])
 
   const handleLogout = async () => {
     await logout()
@@ -62,18 +69,23 @@ export default function UploadPage() {
           filesError={filesError}
           uploading={uploading}
           uploadError={uploadError}
+          uploadQueue={uploadQueue}
           isDragActive={isDragActive}
           syncing={syncing}
           deletingIds={deletingIds}
+          copiedKey={copiedKey}
           onLogout={handleLogout}
           onRefreshSession={checkSession}
           onRefreshFiles={fetchFiles}
           onSyncWorkspace={syncWorkspace}
           onCopyLink={copyLink}
+          onCopyText={copyText}
           onDeleteFile={deleteFile}
           onDrag={handleDrag}
           onDrop={handleDrop}
           onFileChange={handleFileChange}
+          onClearQueue={clearUploadQueue}
+          onPasteFiles={handlePasteFiles}
         />
       )}
     </AppFrame>

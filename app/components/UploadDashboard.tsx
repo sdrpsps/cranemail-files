@@ -1,15 +1,45 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
-import { AlertTriangle, CheckCircle2, LogOut, Server } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  LogOut,
+  RefreshCw,
+  Send,
+  User as UserIcon,
+} from 'lucide-react'
 
+import { GitHubReferral } from '@/app/components/GitHubReferral'
 import { TelegramBindModal } from '@/app/components/TelegramBindModal'
+import { ThemeToggle } from '@/app/components/ThemeToggle'
 import { UploadDropzone } from '@/app/components/UploadDropzone'
 import { UploadedFilesGrid } from '@/app/components/UploadedFilesGrid'
-import type { UploadedFile, User } from '@/app/types/app'
+import type { UploadQueueItem, UploadedFile, User } from '@/app/types/app'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Separator } from '@/components/ui/separator'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { extractHostname } from '@/lib/format'
 
 interface UploadDashboardProps {
   user: User
@@ -18,18 +48,23 @@ interface UploadDashboardProps {
   filesError: string
   uploading: boolean
   uploadError: string
+  uploadQueue: UploadQueueItem[]
   isDragActive: boolean
   syncing: boolean
   deletingIds: Set<string>
+  copiedKey: string | null
   onLogout: () => void
   onRefreshSession: () => Promise<void>
   onRefreshFiles: () => Promise<void>
   onSyncWorkspace: () => void
-  onCopyLink: (url: string) => void
+  onCopyLink: (url: string, label?: string, key?: string) => void
+  onCopyText: (text: string, key?: string, label?: string) => void
   onDeleteFile: (id: string) => Promise<void> | void
   onDrag: (e: DragEvent) => void
   onDrop: (e: DragEvent) => void
   onFileChange: (e: ChangeEvent<HTMLInputElement>) => void
+  onClearQueue: () => void
+  onPasteFiles: (e: ClipboardEvent) => Promise<void>
 }
 
 export function UploadDashboard({
@@ -39,121 +74,279 @@ export function UploadDashboard({
   filesError,
   uploading,
   uploadError,
+  uploadQueue,
   isDragActive,
   syncing,
   deletingIds,
+  copiedKey,
   onLogout,
   onRefreshSession,
   onRefreshFiles,
   onSyncWorkspace,
   onCopyLink,
+  onCopyText,
   onDeleteFile,
   onDrag,
   onDrop,
   onFileChange,
+  onClearQueue,
+  onPasteFiles,
 }: UploadDashboardProps) {
   const [showBindModal, setShowBindModal] = useState(false)
+
+  useEffect(() => {
+    if (showBindModal) return
+
+    const listener = (e: ClipboardEvent) => {
+      void onPasteFiles(e)
+    }
+
+    window.addEventListener('paste', listener)
+    return () => window.removeEventListener('paste', listener)
+  }, [onPasteFiles, showBindModal])
 
   const refreshBindStatus = async () => {
     await onRefreshSession()
     setShowBindModal(false)
   }
 
+  const hostName = extractHostname(user.serverUrl)
+
   return (
-    <>
-      <Card className="rounded-3xl border-zinc-700/70 bg-zinc-800/40 p-5 py-5 text-zinc-100 shadow-[0_24px_80px_rgba(0,0,0,0.62)] ring-1 ring-white/5 backdrop-blur-2xl transition-all duration-500 sm:p-6 sm:py-6 lg:p-8 lg:py-8">
-        <header className="mb-6 flex flex-col gap-4 border-b border-zinc-700/60 pb-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-lg shadow-blue-500/20">
-              <Server className="h-7 w-7 text-white" />
+    <TooltipProvider>
+      <div className="min-h-screen">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
+          <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-primary">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="size-4"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 17l7.5-11L20 14l-5.5 3.5L11.5 11 4 17z" />
+                  <path d="M11.5 11l3 6.5" />
+                </svg>
+              </div>
+
+              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                CraneMail Files
+              </span>
+
+              <Badge
+                variant="outline"
+                className="hidden gap-1.5 font-mono text-[11px] text-muted-foreground sm:inline-flex"
+                title={user.serverUrl}
+              >
+                <span className="size-1.5 rounded-full bg-success" />
+                <span className="max-w-44 truncate">{hostName}</span>
+              </Badge>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">CraneMail Cloud Drive</h1>
-              <p className="mt-1 text-sm text-zinc-400">Personal Cloud File Share</p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBindModal(true)}
+              >
+                <span
+                  className={`size-1.5 rounded-full ${
+                    user.isTelegramBound ? 'bg-success' : 'bg-warning'
+                  }`}
+                />
+                <span className="hidden sm:inline">
+                  {user.isTelegramBound ? 'Telegram Linked' : 'Link Telegram'}
+                </span>
+                <span className="sm:hidden">Bot</span>
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="max-w-52"
+                      aria-label="Account menu"
+                    />
+                  }
+                >
+                  <UserIcon data-icon="inline-start" />
+                  <span className="hidden truncate md:inline">
+                    {user.emailAddress}
+                  </span>
+                  <ChevronDown data-icon="inline-end" />
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="flex flex-col gap-0.5 py-1.5">
+                      <span className="truncate text-xs font-medium text-foreground">
+                        {user.emailAddress}
+                      </span>
+                      <span className="truncate font-mono text-[11px] font-normal text-muted-foreground">
+                        {hostName}
+                      </span>
+                    </DropdownMenuLabel>
+                  </DropdownMenuGroup>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem onClick={() => setShowBindModal(true)}>
+                      <Send />
+                      <span>
+                        {user.isTelegramBound
+                          ? 'Manage Telegram Link'
+                          : 'Link Telegram Bot'}
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void onRefreshFiles()}>
+                      <RefreshCw />
+                      <span>Refresh Library</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem variant="destructive" onClick={onLogout}>
+                      <LogOut />
+                      <span>Sign Out</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <ThemeToggle />
+
+              <GitHubReferral variant="inline" className="hidden sm:inline-flex" />
+
+              <Button
+                type="button"
+                onClick={onLogout}
+                variant="outline"
+                size="sm"
+                className="hidden sm:inline-flex"
+              >
+                <LogOut data-icon="inline-start" />
+                <span>Sign Out</span>
+              </Button>
             </div>
           </div>
-
-          <Button
-            onClick={onLogout}
-            variant="outline"
-            className="h-11 border-zinc-700/80 bg-zinc-800/30 px-5 py-3 text-zinc-300 hover:bg-zinc-800/80 hover:text-white"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </Button>
         </header>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(260px,360px)_1fr]">
-          <aside className="space-y-4">
-            <Card className="flex flex-col space-y-1.5 border-zinc-800/80 bg-zinc-950/65 p-4 py-4 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Account</span>
-              <span className="select-all break-all font-medium text-zinc-200">{user.emailAddress}</span>
-            </Card>
+        <div className="mx-auto max-w-7xl px-4 pt-6 pb-12 sm:px-6">
+          <div className="grid items-start gap-5 lg:grid-cols-[340px_1fr]">
+            <aside className="flex flex-col gap-4 lg:sticky lg:top-20">
+              <UploadDropzone
+                serverUrl={user.serverUrl}
+                uploading={uploading}
+                uploadError={uploadError}
+                uploadQueue={uploadQueue}
+                isDragActive={isDragActive}
+                copiedKey={copiedKey}
+                onDrag={onDrag}
+                onDrop={onDrop}
+                onFileChange={onFileChange}
+                onCopyLink={onCopyLink}
+                onClearQueue={onClearQueue}
+              />
 
-            <Card className="flex flex-col space-y-1.5 border-zinc-800/80 bg-zinc-950/65 p-4 py-4 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">SmarterMail Server</span>
-              <span className="select-all break-all font-mono text-sm text-blue-400">{user.serverUrl}</span>
-            </Card>
+              <Card className="rounded-2xl border border-border bg-card shadow-(--panel-shadow) ring-0">
+                <CardHeader>
+                  <CardTitle className="text-sm font-medium">
+                    Telegram Bot Upload
+                  </CardTitle>
+                  <CardDescription className="text-xs leading-relaxed">
+                    Forward photos or documents to the bot to upload directly into your CraneMail date folders.
+                  </CardDescription>
+                  <CardAction>
+                    <div className="flex size-8 items-center justify-center rounded-lg border border-info/20 bg-info/10 text-info">
+                      <Send className="size-3.5" />
+                    </div>
+                  </CardAction>
+                </CardHeader>
 
-            <Card className="flex flex-col space-y-3 border-zinc-800/80 bg-zinc-950/65 p-4 py-4 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Telegram Upload Integration</span>
+                <CardContent className="flex flex-col gap-3">
+                  <Separator />
 
-              {user.isTelegramBound ? (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center space-x-2 font-medium text-emerald-400">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <span className="text-sm">Linked Successfully</span>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Account</span>
+                    <span className="max-w-48 truncate font-mono text-[11px] text-foreground/90">
+                      {user.emailAddress}
+                    </span>
                   </div>
-                  <Button
-                    onClick={() => setShowBindModal(true)}
-                    variant="link"
-                    size="xs"
-                    className="h-auto px-0 text-xs text-zinc-400"
-                  >
-                    Re-link Account
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col space-y-3">
-                  <div className="flex items-center space-x-2 font-medium text-amber-500">
-                    <AlertTriangle className="h-5 w-5" />
-                    <span className="text-sm">Not Linked</span>
-                  </div>
-                  <Button
-                    onClick={() => setShowBindModal(true)}
-                    className="h-10 w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/10 hover:from-blue-500 hover:to-indigo-500"
-                  >
-                    Link Telegram Bot
-                  </Button>
-                </div>
-              )}
-            </Card>
 
-            <UploadDropzone
-              uploading={uploading}
-              uploadError={uploadError}
-              isDragActive={isDragActive}
-              onDrag={onDrag}
-              onDrop={onDrop}
-              onFileChange={onFileChange}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Status</span>
+                    {user.isTelegramBound ? (
+                      <Badge
+                        variant="outline"
+                        className="border-success/30 bg-success/10 text-success"
+                      >
+                        <CheckCircle2 data-icon="inline-start" />
+                        <span>Linked</span>
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-warning/30 bg-warning/10 text-warning"
+                      >
+                        <AlertTriangle data-icon="inline-start" />
+                        <span>Unlinked</span>
+                      </Badge>
+                    )}
+                  </div>
+
+                  <Button
+                    type="button"
+                    onClick={() => setShowBindModal(true)}
+                    variant={user.isTelegramBound ? 'outline' : 'default'}
+                    className="h-9 w-full text-xs"
+                  >
+                    <Send data-icon="inline-start" />
+                    <span>
+                      {user.isTelegramBound
+                        ? 'Re-link Telegram Account'
+                        : 'Link Telegram Bot'}
+                    </span>
+                  </Button>
+                </CardContent>
+              </Card>
+            </aside>
+
+            <UploadedFilesGrid
+              files={files}
+              serverUrl={user.serverUrl}
+              filesLoading={filesLoading}
+              filesError={filesError}
+              syncing={syncing}
+              deletingIds={deletingIds}
+              copiedKey={copiedKey}
+              onRefreshFiles={onRefreshFiles}
+              onSyncWorkspace={onSyncWorkspace}
+              onCopyLink={onCopyLink}
+              onCopyText={onCopyText}
+              onDeleteFile={onDeleteFile}
             />
-          </aside>
-
-          <UploadedFilesGrid
-            files={files}
-            filesLoading={filesLoading}
-            filesError={filesError}
-            syncing={syncing}
-            deletingIds={deletingIds}
-            onRefreshFiles={onRefreshFiles}
-            onSyncWorkspace={onSyncWorkspace}
-            onCopyLink={onCopyLink}
-            onDeleteFile={onDeleteFile}
-          />
+          </div>
         </div>
-      </Card>
+      </div>
 
-      {showBindModal && <TelegramBindModal onClose={() => setShowBindModal(false)} onRefreshStatus={refreshBindStatus} />}
-    </>
+      {showBindModal && (
+        <TelegramBindModal
+          onClose={() => setShowBindModal(false)}
+          onRefreshStatus={refreshBindStatus}
+          onCopyText={onCopyText}
+        />
+      )}
+    </TooltipProvider>
   )
 }

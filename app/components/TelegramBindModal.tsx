@@ -1,30 +1,73 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertCircle, CheckCircle2, LoaderCircle, Send, X } from 'lucide-react'
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  Copy,
+  Eye,
+  EyeOff,
+  Lock,
+  Send,
+} from 'lucide-react'
 
 import type { BindData } from '@/app/types/app'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group'
+import { Spinner } from '@/components/ui/spinner'
 
 interface TelegramBindModalProps {
+  open?: boolean
   onClose: () => void
-  onRefreshStatus: () => void
+  onRefreshStatus: () => Promise<void> | void
+  onCopyText?: (text: string, key?: string, label?: string) => void
 }
 
-export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModalProps) {
+export function TelegramBindModal({
+  open = true,
+  onClose,
+  onRefreshStatus,
+  onCopyText,
+}: TelegramBindModalProps) {
   const [bindPassword, setBindPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [bindLoading, setBindLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [bindError, setBindError] = useState('')
   const [bindData, setBindData] = useState<BindData | null>(null)
+  const [copiedCommand, setCopiedCommand] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleGenerateBindLink = async (e: FormEvent) => {
     e.preventDefault()
     if (!bindPassword) {
-      setBindError('Please enter your password to confirm linking.')
+      setBindError('Enter your CraneMail password to verify ownership.')
       return
     }
 
@@ -42,131 +85,258 @@ export function TelegramBindModal({ onClose, onRefreshStatus }: TelegramBindModa
       if (data.success && data.data) {
         setBindData(data.data)
       } else {
-        setBindError(data.message || 'Verification failed. Password may be incorrect.')
+        setBindError(
+          data.message ||
+            'Verification failed. Check your password and try again.',
+        )
       }
     } catch (err) {
-      setBindError('Failed to connect to server. Please try again.')
+      setBindError('Failed to reach the server. Please try again.')
       console.error(err)
     } finally {
       setBindLoading(false)
     }
   }
 
+  const startCommand = bindData ? `/start ${bindData.token}` : ''
+
+  const handleCopyCommand = async () => {
+    if (!startCommand) return
+
+    if (onCopyText) {
+      onCopyText(startCommand, 'telegram-start-cmd', 'Bot command copied')
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(startCommand)
+    }
+
+    setCopiedCommand(true)
+    if (copyTimerRef.current) {
+      clearTimeout(copyTimerRef.current)
+    }
+    copyTimerRef.current = setTimeout(() => {
+      setCopiedCommand(false)
+    }, 2000)
+  }
+
+  const handleCompleteBinding = async () => {
+    setRefreshing(true)
+    try {
+      await onRefreshStatus()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <Card className="relative w-full max-w-md rounded-3xl border-zinc-800/85 bg-zinc-950 p-6 py-6 text-zinc-100 shadow-2xl">
-        <Button
-          onClick={onClose}
-          variant="ghost"
-          size="icon"
-          className="absolute right-4 top-4 text-zinc-500 hover:text-zinc-300"
-          aria-label="Close"
-        >
-          <X className="h-6 w-6" />
-        </Button>
-
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose()
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
         {!bindData ? (
-          <form onSubmit={handleGenerateBindLink} className="space-y-4">
-            <div className="mb-4 border-b border-zinc-800/50 pb-2 text-center">
-              <h3 className="text-xl font-bold text-white">Link Telegram Bot</h3>
-              <p className="mt-1 text-xs text-zinc-400">Verify your credentials to generate a secure binding token</p>
-            </div>
-
-            {bindError && (
-              <div className="flex items-start space-x-2 rounded-xl border border-red-900/40 bg-red-950/20 p-3 text-xs text-red-400">
-                <AlertCircle className="mt-0.5 h-4.5 w-4.5 flex-shrink-0" />
-                <span>{bindError}</span>
+          <>
+            <DialogHeader className="gap-2">
+              <div className="flex size-9 items-center justify-center rounded-lg border border-info/25 bg-info/10 text-info">
+                <Send className="size-4" />
               </div>
-            )}
+              <DialogTitle>Link Telegram Bot</DialogTitle>
+              <DialogDescription>
+                Verify your CraneMail password to create a 10-minute binding token for Telegram uploads.
+              </DialogDescription>
+            </DialogHeader>
 
-            <div className="space-y-2">
-              <label className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-400" htmlFor="bind-password">
-                Enter CraneMail Password
-              </label>
-              <Input
-                id="bind-password"
-                type="password"
-                required
-                placeholder="••••••••••••"
-                value={bindPassword}
-                onChange={(e) => setBindPassword(e.target.value)}
-                className="h-11 rounded-xl border-zinc-800 bg-zinc-900/60 px-4 py-3 text-zinc-100 placeholder:text-zinc-600 focus-visible:border-blue-500/80"
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={bindLoading}
-              className="mt-4 h-11 w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500"
+            <form
+              onSubmit={handleGenerateBindLink}
+              className="flex flex-col gap-4"
             >
-              {bindLoading ? (
-                <>
-                  <LoaderCircle className="h-4.5 w-4.5 animate-spin" />
-                  <span>Verifying...</span>
-                </>
-              ) : (
-                <span>Generate Binding Token</span>
+              {bindError && (
+                <Alert
+                  variant="destructive"
+                  className="border-destructive/40 bg-destructive/10"
+                >
+                  <AlertCircle />
+                  <AlertTitle>Verification failed</AlertTitle>
+                  <AlertDescription>{bindError}</AlertDescription>
+                </Alert>
               )}
-            </Button>
-          </form>
-        ) : (
-          <div className="space-y-5 text-center">
-            <div className="border-b border-zinc-800/50 pb-2">
-              <h3 className="text-xl font-bold text-white">Temporary Token Generated</h3>
-              <p className="mt-1 text-xs text-zinc-400">Follow the instructions to complete binding</p>
-            </div>
 
-            <div className="space-y-2 rounded-xl border border-zinc-800/50 bg-zinc-900/60 p-4 text-left text-xs leading-relaxed">
-              <p className="mb-1 font-semibold text-zinc-300">How to Link:</p>
-              <div className="flex items-start space-x-2">
-                <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-blue-600/30 font-bold text-blue-400">
-                  1
-                </span>
-                <span className="text-zinc-400">Click the button below to launch Telegram and open the Bot.</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-blue-600/30 font-bold text-blue-400">
-                  2
-                </span>
-                <span className="text-zinc-400">Click <b>&quot;Start&quot;</b> or send the generated command starting with `/start`.</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-blue-600/30 font-bold text-blue-400">
-                  3
-                </span>
-                <span className="text-zinc-400">Once the Bot confirms success, click the button below to refresh.</span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <a
-                href={bindData.bindUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  buttonVariants({
-                    variant: 'default',
-                    size: 'lg',
-                  }),
-                  'h-11 w-full bg-[#2ea6da] text-white shadow-lg shadow-sky-500/10 hover:bg-[#2794c4]'
-                )}
-              >
-                <Send className="h-5 w-5" />
-                <span>Launch Telegram Bot</span>
-              </a>
+              <FieldGroup className="gap-4">
+                <Field>
+                  <FieldLabel htmlFor="bind-password" className="text-xs">
+                    CraneMail Password
+                  </FieldLabel>
+                  <InputGroup className="h-10 bg-background">
+                    <InputGroupAddon>
+                      <Lock />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      id="bind-password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      placeholder="Enter your password"
+                      value={bindPassword}
+                      onChange={(e) => setBindPassword(e.target.value)}
+                    />
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        size="icon-xs"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff /> : <Eye />}
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  </InputGroup>
+                </Field>
+              </FieldGroup>
 
               <Button
-                onClick={onRefreshStatus}
-                variant="secondary"
-                className="h-11 w-full border border-zinc-700/60 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+                type="submit"
+                size="lg"
+                disabled={bindLoading}
+                className="h-10 w-full"
               >
-                <CheckCircle2 className="h-4 w-4" />
-                <span>I Have Completed Binding</span>
+                {bindLoading ? (
+                  <>
+                    <Spinner data-icon="inline-start" />
+                    <span>Verifying…</span>
+                  </>
+                ) : (
+                  <span>Generate Binding Link</span>
+                )}
               </Button>
+            </form>
+          </>
+        ) : (
+          <>
+            <DialogHeader className="gap-2">
+              <div className="flex size-9 items-center justify-center rounded-lg border border-success/25 bg-success/10 text-success">
+                <CheckCircle2 className="size-4" />
+              </div>
+              <DialogTitle>Binding Token Ready</DialogTitle>
+              <DialogDescription>
+                Complete linking in Telegram within 10 minutes.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-col gap-4">
+              <ol className="flex flex-col gap-2.5 rounded-xl border border-border bg-background/70 p-3.5 text-xs text-muted-foreground">
+                <li className="flex items-start gap-2.5">
+                  <Badge
+                    variant="secondary"
+                    className="mt-0.5 size-5 shrink-0 justify-center p-0 font-mono text-[10px]"
+                  >
+                    1
+                  </Badge>
+                  <span>Open the bot link below to launch Telegram.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <Badge
+                    variant="secondary"
+                    className="mt-0.5 size-5 shrink-0 justify-center p-0 font-mono text-[10px]"
+                  >
+                    2
+                  </Badge>
+                  <span>
+                    Tap <strong className="font-medium text-foreground">Start</strong> in Telegram, or paste the command below directly into the bot chat.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <Badge
+                    variant="secondary"
+                    className="mt-0.5 size-5 shrink-0 justify-center p-0 font-mono text-[10px]"
+                  >
+                    3
+                  </Badge>
+                  <span>
+                    After the bot confirms binding, refresh your status below.
+                  </span>
+                </li>
+              </ol>
+
+              <Field>
+                <FieldLabel
+                  htmlFor="telegram-start-cmd"
+                  className="text-xs text-muted-foreground"
+                >
+                  Manual Start Command
+                </FieldLabel>
+                <InputGroup className="h-9 bg-background">
+                  <InputGroupInput
+                    id="telegram-start-cmd"
+                    readOnly
+                    value={startCommand}
+                    className="font-mono text-xs text-foreground"
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      size="xs"
+                      onClick={handleCopyCommand}
+                      aria-label="Copy start command"
+                    >
+                      {copiedCommand ? (
+                        <>
+                          <Check className="text-success" />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
+              </Field>
             </div>
-          </div>
+
+            <DialogFooter className="flex-col gap-2 sm:flex-col">
+              <Button
+                size="lg"
+                className="h-10 w-full bg-[#229ED9] text-white hover:bg-[#1E8EC3]"
+                render={
+                  <a
+                    href={bindData.bindUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
+                nativeButton={false}
+              >
+                <Send data-icon="inline-start" />
+                <span>Open Telegram Bot</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={handleCompleteBinding}
+                disabled={refreshing}
+                className="h-10 w-full"
+              >
+                {refreshing ? (
+                  <>
+                    <Spinner data-icon="inline-start" />
+                    <span>Checking status…</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 data-icon="inline-start" />
+                    <span>I Have Completed Binding</span>
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </>
         )}
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

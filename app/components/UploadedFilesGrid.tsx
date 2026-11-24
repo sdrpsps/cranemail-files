@@ -1,10 +1,35 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Image from 'next/image'
-import { AlertTriangle, ChevronLeft, ChevronRight, Copy, ExternalLink, FileText, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Code2,
+  Copy,
+  ExternalLink,
+  FileArchive,
+  FileCode2,
+  FileText,
+  FolderSync,
+  Image as ImageIcon,
+  LayoutGrid,
+  List,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+  ZoomIn,
+} from 'lucide-react'
 
-import type { UploadedFile } from '@/app/types/app'
+import type {
+  FileSourceFilter,
+  FileViewMode,
+  UploadedFile,
+} from '@/app/types/app'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,312 +41,1215 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Spinner } from '@/components/ui/spinner'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  formatBytes,
+  formatTimestamp,
+  getFileExtension,
+  getPublicUrl,
+  isImageFile,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface UploadedFilesGridProps {
   files: UploadedFile[]
+  serverUrl?: string
   filesLoading: boolean
   filesError: string
   syncing: boolean
   deletingIds: Set<string>
+  copiedKey: string | null
   onRefreshFiles: () => Promise<void>
   onSyncWorkspace: () => void
-  onCopyLink: (url: string) => void
+  onCopyLink: (url: string, label?: string, key?: string) => void
+  onCopyText: (text: string, key?: string, label?: string) => void
   onDeleteFile: (id: string) => Promise<void> | void
 }
 
-const FILES_PER_PAGE = 6
+const FILES_PER_PAGE = 12
+const THUMBNAIL_SIZE = 512
+const THUMBNAIL_QUALITY = 75
 
-function formatSize(bytes: number) {
-  if (!bytes) return '0 B'
-  const mb = bytes / (1024 * 1024)
-  if (mb >= 0.1) return `${mb.toFixed(2)} MB`
-  const kb = bytes / 1024
-  return `${kb.toFixed(1)} KB`
+function normalizeSource(source: string): Exclude<FileSourceFilter, 'all'> {
+  if (source === 'telegram') return 'telegram'
+  if (source === 'workspace') return 'workspace'
+  return 'web'
 }
 
-function formatDate(isoString?: string) {
-  if (!isoString) return ''
-  try {
-    const cleanIso = isoString.includes(' ') && !isoString.includes('T') ? `${isoString.replace(' ', 'T')}Z` : isoString
-    const d = new Date(cleanIso)
-    return d.toLocaleDateString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return isoString
+function getMarkdownSnippet(fileName: string, publicUrl: string): string {
+  return isImageFile(fileName)
+    ? `![${fileName}](${publicUrl})`
+    : `[${fileName}](${publicUrl})`
+}
+
+function formatShortDate(isoString?: string): string {
+  const formatted = formatTimestamp(isoString)
+  if (formatted === '—') return '—'
+  return formatted.slice(0, 10)
+}
+
+function FileTypeIcon({
+  fileName,
+  className = 'size-5 text-muted-foreground',
+}: {
+  fileName: string
+  className?: string
+}) {
+  const ext = getFileExtension(fileName)
+  if (isImageFile(fileName)) {
+    return <ImageIcon className={className} />
   }
+  if (['ZIP', 'RAR', '7Z', 'TAR', 'GZ'].includes(ext)) {
+    return <FileArchive className={className} />
+  }
+  if (
+    [
+      'JSON',
+      'TS',
+      'TSX',
+      'JS',
+      'JSX',
+      'MD',
+      'CSV',
+      'HTML',
+      'CSS',
+      'XML',
+      'YAML',
+      'YML',
+    ].includes(ext)
+  ) {
+    return <FileCode2 className={className} />
+  }
+  return <FileText className={className} />
 }
 
-function getPublicUrl(publicLink: string) {
-  if (/^https?:\/\//i.test(publicLink)) return publicLink
+function SourceIndicator({ source }: { source: string }) {
+  const kind = normalizeSource(source)
 
-  const baseUrl = process.env.NEXT_PUBLIC_SMARTERMAIL_URL
-  if (!baseUrl) return publicLink
+  if (kind === 'telegram') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <span className="size-1.5 rounded-full bg-info" />
+        <span>Bot</span>
+      </span>
+    )
+  }
 
-  return `${baseUrl.replace(/\/$/, '')}/${publicLink.replace(/^\//, '')}`
+  if (kind === 'workspace') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <span className="size-1.5 rounded-full bg-warning" />
+        <span>Synced</span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+      <span className="size-1.5 rounded-full bg-primary" />
+      <span>Web</span>
+    </span>
+  )
 }
 
-function isPreviewable(fileName: string) {
-  return /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName)
+function FileThumbnail({
+  fileName,
+  publicUrl,
+  compact = false,
+  onPreview,
+}: {
+  fileName: string
+  publicUrl: string
+  compact?: boolean
+  onPreview?: () => void
+}) {
+  const isSvg = /\.svg$/i.test(fileName)
+  const [stage, setStage] = useState<'optimized' | 'direct' | 'error'>(
+    isSvg ? 'direct' : 'optimized',
+  )
+  const imageCandidate =
+    isImageFile(fileName) && Boolean(publicUrl) && stage !== 'error'
+  const ext = getFileExtension(fileName)
+
+  if (imageCandidate) {
+    if (compact) {
+      return (
+        <button
+          type="button"
+          onClick={onPreview}
+          className="group/thumb relative size-9 shrink-0 overflow-hidden rounded-lg border border-border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={`Preview ${fileName}`}
+        >
+          {stage === 'optimized' ? (
+            <Image
+              src={publicUrl}
+              alt={fileName}
+              width={THUMBNAIL_SIZE}
+              height={THUMBNAIL_SIZE}
+              quality={THUMBNAIL_QUALITY}
+              onError={() => setStage('direct')}
+              className="size-full object-cover transition-transform duration-200 ease-out will-change-transform group-hover/thumb:scale-105"
+            />
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={publicUrl}
+              alt={fileName}
+              loading="lazy"
+              decoding="async"
+              onError={() => setStage('error')}
+              className="size-full object-cover transition-transform duration-200 ease-out will-change-transform group-hover/thumb:scale-105"
+            />
+          )}
+        </button>
+      )
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={onPreview}
+        className="group/thumb relative block size-full cursor-zoom-in overflow-hidden bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        title={`Preview ${fileName}`}
+      >
+        {stage === 'optimized' ? (
+          <Image
+            src={publicUrl}
+            alt={fileName}
+            width={THUMBNAIL_SIZE}
+            height={THUMBNAIL_SIZE}
+            quality={THUMBNAIL_QUALITY}
+            onError={() => setStage('direct')}
+            className="size-full object-cover transition-transform duration-300 ease-out will-change-transform group-hover/thumb:scale-[1.03]"
+          />
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={publicUrl}
+            alt={fileName}
+            loading="lazy"
+            decoding="async"
+            onError={() => setStage('error')}
+            className="size-full object-cover transition-transform duration-300 ease-out will-change-transform group-hover/thumb:scale-[1.03]"
+          />
+        )}
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-150 group-hover/thumb:opacity-100">
+          <Badge
+            variant="secondary"
+            className="border border-border bg-popover/95 text-popover-foreground shadow-sm"
+          >
+            <ZoomIn data-icon="inline-start" />
+            <span>Preview</span>
+          </Badge>
+        </span>
+      </button>
+    )
+  }
+
+  if (compact) {
+    return (
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary">
+        <FileTypeIcon fileName={fileName} className="size-4 text-muted-foreground" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex size-full flex-col items-center justify-center gap-2 bg-background/70">
+      <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary">
+        <FileTypeIcon fileName={fileName} />
+      </div>
+      <Badge variant="secondary" className="font-mono text-[10px]">
+        {ext}
+      </Badge>
+    </div>
+  )
 }
 
-function SourceBadge({ source }: { source: string }) {
-  const styles =
-    source === 'telegram'
-      ? 'border-sky-500/20 bg-sky-500/10 text-sky-400'
-      : source === 'workspace'
-        ? 'border-purple-500/20 bg-purple-500/10 text-purple-400'
-        : 'border-blue-500/20 bg-blue-500/10 text-blue-400'
+function ImagePreviewDialog({
+  file,
+  serverUrl,
+  copiedKey,
+  onClose,
+  onCopyLink,
+  onCopyText,
+}: {
+  file: UploadedFile | null
+  serverUrl?: string
+  copiedKey: string | null
+  onClose: () => void
+  onCopyLink: (url: string, label?: string, key?: string) => void
+  onCopyText: (text: string, key?: string, label?: string) => void
+}) {
+  const [loadedOriginalId, setLoadedOriginalId] = useState<string | null>(null)
+  const [failedOriginalId, setFailedOriginalId] = useState<string | null>(null)
+  const [failedThumbId, setFailedThumbId] = useState<string | null>(null)
 
-  const label = source === 'telegram' ? 'Bot' : source === 'workspace' ? 'Workspace' : 'Web'
-  const icon = source === 'telegram' ? '🤖' : source === 'workspace' ? '💼' : '💻'
+  const publicUrl = file ? getPublicUrl(file.publicLink, serverUrl) : ''
+  const urlKey = file ? `lightbox-url-${file.id}` : ''
+  const mdKey = file ? `lightbox-md-${file.id}` : ''
+  const isSvg = file ? /\.svg$/i.test(file.fileName) : false
+  const originalLoaded = Boolean(file && loadedOriginalId === file.id)
+  const originalError = Boolean(file && failedOriginalId === file.id)
+  const thumbError = Boolean(file && failedThumbId === file.id)
+  const showUnavailable =
+    !publicUrl || (originalError && (isSvg || thumbError))
 
-  return <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${styles}`}>{icon} {label}</span>
+  return (
+    <Dialog
+      open={Boolean(file)}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose()
+        }
+      }}
+    >
+      {file && (
+        <DialogContent className="flex max-h-[92vh] w-fit min-w-[min(92vw,380px)] max-w-[92vw] flex-col gap-3 sm:max-w-[90vw]">
+          <DialogHeader className="w-0 min-w-full pr-8">
+            <DialogTitle className="truncate">{file.fileName}</DialogTitle>
+            <DialogDescription className="flex flex-wrap items-center gap-2 text-xs tabular-nums">
+              <span>{formatBytes(file.size)}</span>
+              <span>·</span>
+              <span>{formatTimestamp(file.createdAt)}</span>
+              <span>·</span>
+              <SourceIndicator source={file.source} />
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-background">
+            {!showUnavailable ? (
+              !isSvg && !thumbError ? (
+                <div className="relative inline-flex items-center justify-center">
+                  <Image
+                    key={`thumb-${file.id}`}
+                    src={publicUrl}
+                    alt={file.fileName}
+                    width={THUMBNAIL_SIZE}
+                    height={THUMBNAIL_SIZE}
+                    quality={THUMBNAIL_QUALITY}
+                    onError={() => setFailedThumbId(file.id)}
+                    className="block h-auto max-h-[72vh] w-auto max-w-[calc(90vw-2rem)] object-contain"
+                  />
+                  {!originalError && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      key={`orig-${file.id}`}
+                      src={publicUrl}
+                      alt={file.fileName}
+                      decoding="async"
+                      onLoad={() => setLoadedOriginalId(file.id)}
+                      onError={() => setFailedOriginalId(file.id)}
+                      className={cn(
+                        'absolute inset-0 size-full object-contain transition-opacity duration-200',
+                        originalLoaded ? 'opacity-100' : 'opacity-0',
+                      )}
+                    />
+                  )}
+                  {!originalLoaded && !originalError && (
+                    <Badge
+                      variant="secondary"
+                      className="pointer-events-none absolute right-2.5 bottom-2.5 border border-border bg-popover/95 text-[11px] text-popover-foreground shadow-sm"
+                    >
+                      <Spinner data-icon="inline-start" />
+                      <span>Loading original…</span>
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  key={`orig-${file.id}`}
+                  src={publicUrl}
+                  alt={file.fileName}
+                  decoding="async"
+                  onLoad={() => setLoadedOriginalId(file.id)}
+                  onError={() => setFailedOriginalId(file.id)}
+                  className="block h-auto max-h-[72vh] w-auto max-w-[calc(90vw-2rem)] object-contain"
+                />
+              )
+            ) : (
+              <Empty className="px-6 py-10">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <ImageIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>Preview unavailable</EmptyTitle>
+                  <EmptyDescription>
+                    This file could not be rendered inline in the browser.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </div>
+
+          <DialogFooter className="flex-row flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                onCopyText(
+                  getMarkdownSnippet(file.fileName, publicUrl),
+                  mdKey,
+                  'Markdown snippet copied',
+                )
+              }
+            >
+              {copiedKey === mdKey ? (
+                <>
+                  <Check data-icon="inline-start" className="text-success" />
+                  <span>Copied MD</span>
+                </>
+              ) : (
+                <>
+                  <Code2 data-icon="inline-start" />
+                  <span>Copy Markdown</span>
+                </>
+              )}
+            </Button>
+
+            <Button
+              type="button"
+              size="sm"
+              onClick={() =>
+                onCopyLink(publicUrl, 'Direct link copied', urlKey)
+              }
+            >
+              {copiedKey === urlKey ? (
+                <>
+                  <Check data-icon="inline-start" />
+                  <span>Copied URL</span>
+                </>
+              ) : (
+                <>
+                  <Copy data-icon="inline-start" />
+                  <span>Copy URL</span>
+                </>
+              )}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <a
+                  href={publicUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+              nativeButton={false}
+            >
+              <ExternalLink data-icon="inline-start" />
+              <span>Open</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      )}
+    </Dialog>
+  )
 }
 
 export function UploadedFilesGrid({
   files,
+  serverUrl,
   filesLoading,
   filesError,
   syncing,
   deletingIds,
+  copiedKey,
   onRefreshFiles,
   onSyncWorkspace,
   onCopyLink,
+  onCopyText,
   onDeleteFile,
 }: UploadedFilesGridProps) {
-  const [deleteTarget, setDeleteTarget] = useState<UploadedFile | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sourceFilter, setSourceFilter] = useState<FileSourceFilter>('all')
+  const [viewMode, setViewMode] = useState<FileViewMode>('grid')
   const [currentPage, setCurrentPage] = useState(1)
-  const isDeletingTarget = deleteTarget ? deletingIds.has(deleteTarget.id) : false
-  const pageCount = Math.max(1, Math.ceil(files.length / FILES_PER_PAGE))
+  const [previewTarget, setPreviewTarget] = useState<UploadedFile | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<UploadedFile | null>(null)
+
+  const totalSize = useMemo(
+    () => files.reduce((sum, file) => sum + (Number(file.size) || 0), 0),
+    [files],
+  )
+
+  const filteredFiles = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    return files.filter((file) => {
+      if (sourceFilter !== 'all' && normalizeSource(file.source) !== sourceFilter) {
+        return false
+      }
+      if (query && !file.fileName.toLowerCase().includes(query)) {
+        return false
+      }
+      return true
+    })
+  }, [files, searchQuery, sourceFilter])
+
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 || sourceFilter !== 'all'
+
+  const pageCount = Math.max(1, Math.ceil(filteredFiles.length / FILES_PER_PAGE))
   const safeCurrentPage = Math.min(currentPage, pageCount)
   const pageStart = (safeCurrentPage - 1) * FILES_PER_PAGE
-  const pageFiles = files.slice(pageStart, pageStart + FILES_PER_PAGE)
+  const pageFiles = filteredFiles.slice(pageStart, pageStart + FILES_PER_PAGE)
+
+  const isDeletingTarget = deleteTarget ? deletingIds.has(deleteTarget.id) : false
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    setCurrentPage(1)
+  }
+
+  const handleSourceChange = (next: FileSourceFilter) => {
+    setSourceFilter(next)
+    setCurrentPage(1)
+  }
+
+  const resetFilters = () => {
+    setSearchQuery('')
+    setSourceFilter('all')
+    setCurrentPage(1)
+  }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
-
     await onDeleteFile(deleteTarget.id)
     setDeleteTarget(null)
   }
 
+  const summaryLabel = hasActiveFilters
+    ? `${filteredFiles.length} of ${files.length} files · ${formatBytes(totalSize)}`
+    : `${files.length} ${files.length === 1 ? 'file' : 'files'} · ${formatBytes(totalSize)}`
+
   return (
     <>
-      <Card className="space-y-3 border-zinc-800/80 bg-zinc-950/70 p-4 py-4 text-zinc-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Upload History ({files.length})</p>
-            {files.length > 0 && (
-              <p className="mt-1 font-mono text-[10px] text-zinc-500">
-                Page {safeCurrentPage} / {pageCount}
-              </p>
-            )}
+      <Card className="rounded-2xl border border-border bg-card shadow-(--panel-shadow) ring-0">
+        <CardHeader className="flex flex-col items-stretch gap-3 border-b border-border pb-4">
+          <div className="flex w-full items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-2.5">
+              <CardTitle className="text-sm font-medium">File Library</CardTitle>
+              <CardDescription className="font-mono text-xs tabular-nums">
+                {summaryLabel}
+              </CardDescription>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button
+                type="button"
+                onClick={onSyncWorkspace}
+                disabled={syncing || filesLoading}
+                variant="outline"
+                size="sm"
+                title="Scan CraneMail workspace folder for existing files"
+              >
+                {syncing ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <FolderSync data-icon="inline-start" className="text-warning" />
+                )}
+                <span>{syncing ? 'Syncing…' : 'Sync Workspace'}</span>
+              </Button>
+
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      onClick={onRefreshFiles}
+                      disabled={filesLoading || syncing}
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Refresh library"
+                    />
+                  }
+                >
+                  {filesLoading && !syncing ? <Spinner /> : <RefreshCw />}
+                </TooltipTrigger>
+                <TooltipContent>Refresh library</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              onClick={onRefreshFiles}
-              disabled={filesLoading || syncing}
-              variant="outline"
-              size="xs"
-              className="border-zinc-800 bg-zinc-950/60 text-[10px] text-zinc-300 hover:bg-zinc-900 hover:text-white"
-              title="Refresh uploaded file list"
+
+          <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <Tabs
+              value={sourceFilter}
+              onValueChange={(value) =>
+                handleSourceChange(value as FileSourceFilter)
+              }
             >
-              {filesLoading && !syncing ? (
-                <>
-                  <LoaderCircle className="h-3 w-3 animate-spin text-blue-400" />
-                  <span>Refreshing...</span>
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-3 w-3 text-blue-400" />
-                  <span>Refresh</span>
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={onSyncWorkspace}
-              disabled={syncing || filesLoading}
-              variant="outline"
-              size="xs"
-              className="border-zinc-800 bg-zinc-950/60 text-[10px] text-zinc-300 hover:bg-zinc-900 hover:text-white"
-              title="Sync existing files from your SmarterMail storage folders"
-            >
-              {syncing ? (
-                <>
-                  <LoaderCircle className="h-3 w-3 animate-spin text-purple-400" />
-                  <span>Syncing...</span>
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-3 w-3 text-purple-400" />
-                  <span>Sync Workspace</span>
-                </>
-              )}
-            </Button>
-            {filesLoading && !syncing && <LoaderCircle className="h-4 w-4 animate-spin text-blue-500" />}
-          </div>
-        </div>
+              <TabsList className="h-8 bg-background">
+                <TabsTrigger value="all" className="px-2.5 text-xs">
+                  All
+                </TabsTrigger>
+                <TabsTrigger value="web" className="px-2.5 text-xs">
+                  Web
+                </TabsTrigger>
+                <TabsTrigger value="telegram" className="px-2.5 text-xs">
+                  Telegram
+                </TabsTrigger>
+                <TabsTrigger value="workspace" className="px-2.5 text-xs">
+                  Synced
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
 
-        {filesError && <p className="text-xs text-red-400">{filesError}</p>}
-
-        {files.length > 0 ? (
-            <>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3 rounded-xl bg-black/20 p-2 ring-1 ring-zinc-900/80">
-                {pageFiles.map((file) => {
-                  const publicUrl = getPublicUrl(file.publicLink)
-
-                  return (
-                    <Card
-                      key={file.id}
-                      className="flex min-w-0 flex-col gap-3 border-zinc-800/90 bg-zinc-900/75 p-3 py-3 text-xs shadow-[0_10px_24px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.03)] transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-700 hover:bg-zinc-900/95 hover:shadow-[0_14px_30px_rgba(0,0,0,0.34)]"
+            <div className="flex items-center gap-2">
+              <InputGroup className="w-full bg-background sm:w-56">
+                <InputGroupAddon>
+                  <Search />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Search files…"
+                  aria-label="Search files by filename"
+                />
+                {searchQuery && (
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      size="icon-xs"
+                      onClick={() => handleSearchChange('')}
+                      aria-label="Clear search"
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        {isPreviewable(file.fileName) ? (
-                          <Image
-                            src={publicUrl}
-                            alt={file.fileName}
-                            width={64}
-                            height={64}
-                            className="h-16 w-16 flex-shrink-0 cursor-zoom-in rounded-lg border border-zinc-700/80 bg-zinc-950 object-cover shadow-[0_6px_16px_rgba(0,0,0,0.32)] transition-transform duration-200 hover:scale-105"
-                            onClick={() => window.open(publicUrl, '_blank')}
+                      <X />
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                )}
+              </InputGroup>
+
+              <ToggleGroup
+                value={[viewMode]}
+                onValueChange={(values) => {
+                  const next = values[0] as FileViewMode | undefined
+                  if (next) {
+                    setViewMode(next)
+                  }
+                }}
+                variant="outline"
+                size="sm"
+                spacing={0}
+                aria-label="Toggle layout view"
+                className="shrink-0 bg-background"
+              >
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <ToggleGroupItem
+                        value="grid"
+                        aria-label="Grid view"
+                      />
+                    }
+                  >
+                    <LayoutGrid />
+                  </TooltipTrigger>
+                  <TooltipContent>Grid view</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <ToggleGroupItem
+                        value="list"
+                        aria-label="List view"
+                      />
+                    }
+                  >
+                    <List />
+                  </TooltipTrigger>
+                  <TooltipContent>List view</TooltipContent>
+                </Tooltip>
+              </ToggleGroup>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="flex flex-col gap-4">
+          {filesError && (
+            <Alert
+              variant="destructive"
+              className="border-destructive/40 bg-destructive/10"
+            >
+              <AlertTriangle />
+              <AlertTitle>Failed to load files</AlertTitle>
+              <AlertDescription className="flex items-center justify-between gap-3">
+                <span>{filesError}</span>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={onRefreshFiles}
+                >
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {filesLoading && files.length === 0 ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <Card key={idx} size="sm" className="bg-background/50 pt-0">
+                  <Skeleton className="aspect-[16/10] w-full rounded-none" />
+                  <CardContent className="flex flex-col gap-2 py-3">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : pageFiles.length > 0 ? (
+            <>
+              {viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+                  {pageFiles.map((file) => {
+                    const publicUrl = getPublicUrl(file.publicLink, serverUrl)
+                    const urlKey = `url-${file.id}`
+                    const mdKey = `md-${file.id}`
+                    const isUrlCopied = copiedKey === urlKey
+                    const isMdCopied = copiedKey === mdKey
+                    const isDeleting = deletingIds.has(file.id)
+
+                    return (
+                      <Card
+                        key={file.id}
+                        size="sm"
+                        className="min-w-0 gap-0 bg-secondary/40 pt-0 transition-colors hover:bg-secondary/70"
+                      >
+                        <div className="relative aspect-[16/10] w-full overflow-hidden border-b border-border bg-background">
+                          <FileThumbnail
+                            key={publicUrl}
+                            fileName={file.fileName}
+                            publicUrl={publicUrl}
+                            onPreview={() => setPreviewTarget(file)}
                           />
-                        ) : (
-                          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-zinc-700/80 bg-zinc-950 shadow-[0_6px_16px_rgba(0,0,0,0.32)]">
-                            <FileText className="h-5 w-5 text-zinc-500" />
-                          </div>
-                        )}
-
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <p className="truncate font-medium text-zinc-200" title={file.fileName}>
-                            {file.fileName}
-                          </p>
-                          <p className="font-mono text-[10px] text-zinc-500">{formatSize(file.size)}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-[10px] text-zinc-500">{formatDate(file.createdAt)}</span>
-                            <SourceBadge source={file.source} />
-                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center justify-end space-x-1">
-                        <a
-                          href={publicUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(
-                            buttonVariants({
-                              variant: 'outline',
-                              size: 'icon-xs',
-                            }),
-                            'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100'
-                          )}
-                          title="Open Link"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                        <Button
-                          onClick={() => onCopyLink(publicUrl)}
-                          variant="outline"
-                          size="icon-xs"
-                          className="border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-blue-400"
-                          title="Copy Direct Link"
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          onClick={() => setDeleteTarget(file)}
-                          disabled={deletingIds.has(file.id)}
-                          variant="destructive"
-                          size="icon-xs"
-                          className="border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-red-900/40 hover:bg-red-950/40 hover:text-red-400"
-                          title="Delete Record"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </Card>
-                  )
-                })}
-              </div>
+                        <CardContent className="flex flex-1 flex-col justify-between gap-3 py-3">
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <h3
+                              className="truncate text-xs font-medium text-foreground"
+                              title={file.fileName}
+                            >
+                              {file.fileName}
+                            </h3>
+                            <div
+                              className="flex items-center gap-1.5 truncate font-mono text-[11px] tabular-nums text-muted-foreground"
+                              title={formatTimestamp(file.createdAt)}
+                            >
+                              <span>{formatBytes(file.size)}</span>
+                              <span>·</span>
+                              <span>{formatShortDate(file.createdAt)}</span>
+                              <span>·</span>
+                              <SourceIndicator source={file.source} />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 pt-0.5">
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="secondary"
+                              onClick={() =>
+                                onCopyLink(
+                                  publicUrl,
+                                  'Direct link copied to clipboard',
+                                  urlKey,
+                                )
+                              }
+                              className="h-7 flex-1 text-xs"
+                              title="Copy direct public URL"
+                            >
+                              {isUrlCopied ? (
+                                <>
+                                  <Check
+                                    data-icon="inline-start"
+                                    className="text-success"
+                                  />
+                                  <span>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy data-icon="inline-start" />
+                                  <span>Copy URL</span>
+                                </>
+                              )}
+                            </Button>
+
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <Button
+                                    type="button"
+                                    size="icon-xs"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      onCopyText(
+                                        getMarkdownSnippet(
+                                          file.fileName,
+                                          publicUrl,
+                                        ),
+                                        mdKey,
+                                        'Markdown snippet copied',
+                                      )
+                                    }
+                                    className="size-7 text-muted-foreground hover:text-foreground"
+                                    aria-label={`Copy Markdown for ${file.fileName}`}
+                                  />
+                                }
+                              >
+                                {isMdCopied ? (
+                                  <Check className="text-success" />
+                                ) : (
+                                  <Code2 />
+                                )}
+                              </TooltipTrigger>
+                              <TooltipContent>Copy Markdown</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <a
+                                    href={publicUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={cn(
+                                      buttonVariants({
+                                        variant: 'ghost',
+                                        size: 'icon-xs',
+                                      }),
+                                      'size-7 text-muted-foreground hover:text-foreground',
+                                    )}
+                                    aria-label={`Open ${file.fileName} in new tab`}
+                                  />
+                                }
+                              >
+                                <ExternalLink />
+                              </TooltipTrigger>
+                              <TooltipContent>Open in new tab</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <Button
+                                    type="button"
+                                    size="icon-xs"
+                                    variant="ghost"
+                                    onClick={() => setDeleteTarget(file)}
+                                    disabled={isDeleting}
+                                    className="size-7 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                                    aria-label={`Delete ${file.fileName}`}
+                                  />
+                                }
+                              >
+                                {isDeleting ? <Spinner /> : <Trash2 />}
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Delete from workspace
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-border bg-background/60">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="px-3 text-xs text-muted-foreground">
+                          File
+                        </TableHead>
+                        <TableHead className="text-xs text-muted-foreground">
+                          Source
+                        </TableHead>
+                        <TableHead className="text-right text-xs text-muted-foreground">
+                          Size
+                        </TableHead>
+                        <TableHead className="hidden text-right text-xs text-muted-foreground md:table-cell">
+                          Uploaded
+                        </TableHead>
+                        <TableHead className="px-3 text-right text-xs text-muted-foreground">
+                          Actions
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pageFiles.map((file) => {
+                        const publicUrl = getPublicUrl(file.publicLink, serverUrl)
+                        const urlKey = `url-${file.id}`
+                        const mdKey = `md-${file.id}`
+                        const isUrlCopied = copiedKey === urlKey
+                        const isMdCopied = copiedKey === mdKey
+                        const isDeleting = deletingIds.has(file.id)
+
+                        return (
+                          <TableRow key={file.id}>
+                            <TableCell className="max-w-[260px] px-3">
+                              <div className="flex min-w-0 items-center gap-2.5">
+                                <FileThumbnail
+                                  key={publicUrl}
+                                  fileName={file.fileName}
+                                  publicUrl={publicUrl}
+                                  compact
+                                  onPreview={() => setPreviewTarget(file)}
+                                />
+                                <div className="flex min-w-0 flex-col gap-0.5">
+                                  <span
+                                    className="truncate text-xs font-medium text-foreground"
+                                    title={file.fileName}
+                                  >
+                                    {file.fileName}
+                                  </span>
+                                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground md:hidden">
+                                    {formatTimestamp(file.createdAt)}
+                                  </span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                              <SourceIndicator source={file.source} />
+                            </TableCell>
+
+                            <TableCell className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                              {formatBytes(file.size)}
+                            </TableCell>
+
+                            <TableCell className="hidden text-right font-mono text-[11px] tabular-nums text-muted-foreground md:table-cell">
+                              {formatTimestamp(file.createdAt)}
+                            </TableCell>
+
+                            <TableCell className="px-3 text-right">
+                              <div className="inline-flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    onCopyLink(
+                                      publicUrl,
+                                      'Direct link copied to clipboard',
+                                      urlKey,
+                                    )
+                                  }
+                                  className="h-7 text-[11px]"
+                                >
+                                  {isUrlCopied ? (
+                                    <>
+                                      <Check
+                                        data-icon="inline-start"
+                                        className="text-success"
+                                      />
+                                      <span>Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy data-icon="inline-start" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </Button>
+
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        type="button"
+                                        size="icon-xs"
+                                        variant="ghost"
+                                        onClick={() =>
+                                          onCopyText(
+                                            getMarkdownSnippet(
+                                              file.fileName,
+                                              publicUrl,
+                                            ),
+                                            mdKey,
+                                            'Markdown snippet copied',
+                                          )
+                                        }
+                                        className="size-7 text-muted-foreground hover:text-foreground"
+                                        aria-label={`Copy Markdown for ${file.fileName}`}
+                                      />
+                                    }
+                                  >
+                                    {isMdCopied ? (
+                                      <Check className="text-success" />
+                                    ) : (
+                                      <Code2 />
+                                    )}
+                                  </TooltipTrigger>
+                                  <TooltipContent>Copy Markdown</TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <a
+                                        href={publicUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={cn(
+                                          buttonVariants({
+                                            variant: 'ghost',
+                                            size: 'icon-xs',
+                                          }),
+                                          'size-7 text-muted-foreground hover:text-foreground',
+                                        )}
+                                        aria-label={`Open ${file.fileName} in new tab`}
+                                      />
+                                    }
+                                  >
+                                    <ExternalLink />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Open in new tab
+                                  </TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        type="button"
+                                        size="icon-xs"
+                                        variant="ghost"
+                                        onClick={() => setDeleteTarget(file)}
+                                        disabled={isDeleting}
+                                        className="size-7 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                                        aria-label={`Delete ${file.fileName}`}
+                                      />
+                                    }
+                                  >
+                                    {isDeleting ? <Spinner /> : <Trash2 />}
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Delete from workspace
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
 
               {pageCount > 1 && (
-                <div className="flex items-center justify-between gap-3 border-t border-zinc-900/80 pt-3">
-                  <Button
-                    onClick={() => setCurrentPage((page) => Math.max(1, Math.min(page, pageCount) - 1))}
-                    disabled={safeCurrentPage <= 1}
-                    variant="outline"
-                    size="xs"
-                    className="border-zinc-800 bg-zinc-950/60 text-[10px] text-zinc-300 hover:bg-zinc-900 hover:text-white"
-                    title="Previous page"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                    <span>Previous</span>
-                  </Button>
-                  <span className="font-mono text-[10px] text-zinc-500">
-                    {pageStart + 1}-{Math.min(pageStart + FILES_PER_PAGE, files.length)} of {files.length}
-                  </span>
-                  <Button
-                    onClick={() => setCurrentPage((page) => Math.min(pageCount, Math.min(page, pageCount) + 1))}
-                    disabled={safeCurrentPage >= pageCount}
-                    variant="outline"
-                    size="xs"
-                    className="border-zinc-800 bg-zinc-950/60 text-[10px] text-zinc-300 hover:bg-zinc-900 hover:text-white"
-                    title="Next page"
-                  >
-                    <span>Next</span>
-                    <ChevronRight className="h-3 w-3" />
-                  </Button>
+                <div className="flex flex-col gap-3">
+                  <Separator />
+                  <div className="flex items-center justify-between gap-3">
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        setCurrentPage((page) =>
+                          Math.max(1, Math.min(page, pageCount) - 1),
+                        )
+                      }
+                      disabled={safeCurrentPage <= 1}
+                      variant="outline"
+                      size="xs"
+                      className="h-7"
+                    >
+                      <ChevronLeft data-icon="inline-start" />
+                      <span>Previous</span>
+                    </Button>
+
+                    <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {pageStart + 1}–
+                      {Math.min(pageStart + FILES_PER_PAGE, filteredFiles.length)}{' '}
+                      of {filteredFiles.length} · Page {safeCurrentPage}/
+                      {pageCount}
+                    </span>
+
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        setCurrentPage((page) =>
+                          Math.min(pageCount, Math.min(page, pageCount) + 1),
+                        )
+                      }
+                      disabled={safeCurrentPage >= pageCount}
+                      variant="outline"
+                      size="xs"
+                      className="h-7"
+                    >
+                      <span>Next</span>
+                      <ChevronRight data-icon="inline-end" />
+                    </Button>
+                  </div>
                 </div>
               )}
             </>
-        ) : (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-black/25 py-6 text-center">
-            <FileText className="mb-2 h-7 w-7 text-zinc-600" />
-            <p className="text-[11px] text-zinc-500">No files uploaded yet.</p>
-            <p className="mt-0.5 text-[9px] text-zinc-600">Drag & drop files above to start.</p>
-          </div>
-        )}
+          ) : files.length === 0 ? (
+            <Empty className="border border-dashed border-border bg-background/50 py-14">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FileText />
+                </EmptyMedia>
+                <EmptyTitle>No files in your library yet</EmptyTitle>
+                <EmptyDescription>
+                  Drop or paste a file in the upload panel, or sync existing files already stored in your CraneMail public folder.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onSyncWorkspace}
+                  disabled={syncing || filesLoading}
+                >
+                  {syncing ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <FolderSync
+                      data-icon="inline-start"
+                      className="text-warning"
+                    />
+                  )}
+                  <span>
+                    {syncing
+                      ? 'Syncing Workspace…'
+                      : 'Sync Existing Workspace Files'}
+                  </span>
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <Empty className="border border-dashed border-border bg-background/50 py-12">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Search />
+                </EmptyMedia>
+                <EmptyTitle>No matching files</EmptyTitle>
+                <EmptyDescription>
+                  Try another filename or clear the active filters.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={resetFilters}
+                >
+                  Reset Filters
+                </Button>
+              </EmptyContent>
+            </Empty>
+          )}
+        </CardContent>
       </Card>
 
-      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent className="border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl shadow-black/50">
+      <ImagePreviewDialog
+        file={previewTarget}
+        serverUrl={serverUrl}
+        copiedKey={copiedKey}
+        onClose={() => setPreviewTarget(null)}
+        onCopyLink={onCopyLink}
+        onCopyText={onCopyText}
+      />
+
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingTarget) {
+            setDeleteTarget(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogMedia className="bg-red-500/10 text-red-400">
-              <AlertTriangle className="h-6 w-6" />
+            <AlertDialogMedia className="bg-destructive/15 text-destructive">
+              <AlertTriangle />
             </AlertDialogMedia>
             <AlertDialogTitle>Delete workspace file?</AlertDialogTitle>
-            <AlertDialogDescription className="text-zinc-400">
-              This permanently deletes the file from your CraneMail workspace and removes it from upload history. The file name is{' '}
-              <span className="font-medium text-zinc-200">{deleteTarget?.fileName}</span>. This action cannot be undone.
+            <AlertDialogDescription>
+              This permanently removes{' '}
+              <span className="font-medium text-foreground">
+                {deleteTarget?.fileName}
+              </span>{' '}
+              from your CraneMail workspace and deletes its public link record. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="border-zinc-800 bg-zinc-900/60">
-            <AlertDialogCancel
-              disabled={isDeletingTarget}
-              className="border-zinc-700 bg-zinc-950/70 text-zinc-300 hover:bg-zinc-900 hover:text-white"
-            >
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingTarget}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
               disabled={isDeletingTarget}
-              className="bg-red-600 text-white hover:bg-red-500"
+              variant="destructive"
             >
               {isDeletingTarget ? (
                 <>
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Deleting...
+                  <Spinner data-icon="inline-start" />
+                  <span>Deleting…</span>
                 </>
               ) : (
                 <>
-                  <Trash2 className="h-4 w-4" />
-                  Delete
+                  <Trash2 data-icon="inline-start" />
+                  <span>Delete Permanently</span>
                 </>
               )}
             </AlertDialogAction>
