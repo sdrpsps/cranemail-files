@@ -156,8 +156,6 @@ The app uses grammY for message handling and Bot API calls. Adding a bot calls `
 
 A Telegram bot has one webhook. Connecting it here replaces its previous webhook, so use a dedicated bot. Tokens are encrypted and never returned by the list API. Multiple CraneMail accounts adding the same token share the bot record and webhook, while each Telegram user can access only accounts they have linked.
 
-For local polling, run `pnpm dev:bot <bot-id>` using a bot configured on the dashboard. Run `pnpm dev:bot` without an ID to list configured bot IDs and usernames. Polling deletes the selected bot's webhook, so use a dedicated development bot. Reconnect the bot on the dashboard to register its webhook again.
-
 ## Common questions
 
 **Do I need Telegram or Turso to try this?**
@@ -178,7 +176,7 @@ Try a small file first. Check your CraneMail storage quota and sharing permissio
 
 **Why does Telegram not respond, or reject a binding token?**
 
-Check the bot token and `getWebhookInfo`. Generate a fresh binding link within its 10-minute window. The web app and webhook must use the same database. If you ran `pnpm dev:bot <bot-id>`, reconnect that bot on the dashboard to restore its webhook.
+Check the bot token and `getWebhookInfo`. Generate a fresh binding link within its 10-minute window. The web app and webhook must use the same database.
 
 **Why does the app say “Database is not ready”?**
 

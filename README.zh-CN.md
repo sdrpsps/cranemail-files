@@ -156,8 +156,6 @@ https://files.example.com/api/telegram/webhook/<bot-id>
 
 一个 Telegram 机器人只有一个 webhook。连接到本站会替换该机器人原来的 webhook，请使用专门用于本站的机器人。token 不会在查询接口中返回。多个 CraneMail 账号配置同一个 token 时会共用同一机器人记录和 webhook，但每个 Telegram 用户只能查看和选择自己已绑定的账号。
 
-本地轮询使用 `pnpm dev:bot <bot-id>`，指定已在网页配置的机器人。不带 ID 运行 `pnpm dev:bot` 可查看已配置机器人的 ID 和用户名。轮询会删除所选机器人的 webhook，请使用专门用于开发的机器人；需要恢复 webhook 时，在网页重新连接该机器人即可。
-
 ## 常见问题
 
 **必须配置 Telegram 和 Turso 才能试用吗？**
@@ -178,7 +176,7 @@ https://files.example.com/api/telegram/webhook/<bot-id>
 
 **Telegram 没反应，或者提示绑定 token 无效？**
 
-检查 bot token 和 `getWebhookInfo`，并在 10 分钟内使用新生成的绑定链接。网页和 webhook 必须连接同一个数据库。如果运行过 `pnpm dev:bot <bot-id>`，在网页重新连接对应机器人以恢复 webhook。
+检查 bot token 和 `getWebhookInfo`，并在 10 分钟内使用新生成的绑定链接。网页和 webhook 必须连接同一个数据库。
 
 **为什么提示 “Database is not ready”？**
 
