@@ -136,6 +136,17 @@ export const uploadedFiles = sqliteTable('uploaded_files', {
   uniqueIndex('uploaded_files_shortCode_unique').on(table.shortCode),
 ])
 
+export const webUploads = sqliteTable('web_uploads', {
+  userId: text('userId').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  requestId: text('requestId').notNull(),
+  recordId: text('recordId').notNull(),
+  fileName: text('fileName').notNull(),
+  size: integer('size').notNull(),
+  serverUrl: text('serverUrl').notNull(),
+  fileId: text('fileId'),
+  createdAt: text('createdAt').notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.requestId] })])
+
 export type UserRecord = typeof users.$inferSelect
 export type NewUserRecord = typeof users.$inferInsert
 export type BindTokenRecord = typeof bindTokens.$inferSelect

@@ -7,7 +7,7 @@ import { SmarterMailClient } from '@/lib/smartermail'
 import { encrypt } from '@/lib/crypto'
 import { findBotRuntime, hasBotAccess } from '@/lib/bot/config'
 import { isUserTelegramBound } from '@/lib/bot/users'
-import { bindTokens, db, users } from '@/lib/db'
+import { bindTokens, getDb, users } from '@/lib/db'
 import { upsertSmarterMailSession } from '@/lib/smartermail-session'
 import nodeCrypto from 'crypto'
 import {
@@ -89,6 +89,7 @@ authApp.post('/telegram/bind-token', async (c) => {
 
     const encryptedPassword = encrypt(password)
 
+    const db = getDb()
     await db
       .update(users)
       .set({

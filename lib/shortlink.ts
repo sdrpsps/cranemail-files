@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 
-import { db, uploadedFiles, users } from './db'
+import { getDb, uploadedFiles, users } from './db'
 import { getPublicUrl } from './format'
 import { isValidShortCode, withShortCodeRetry } from './shortlink-code'
 
@@ -12,13 +12,13 @@ export function buildShortUrl(code: string): string {
 }
 
 export async function assignShortCode(recordId: string): Promise<string | null> {
-  await withShortCodeRetry((shortCode) => db
+  await withShortCodeRetry((shortCode) => getDb()
     .update(uploadedFiles)
     .set({ shortCode })
     .where(and(eq(uploadedFiles.id, recordId), isNull(uploadedFiles.shortCode))))
 
   // Concurrent callers may already have assigned a code; always return the stored one.
-  const [file] = await db
+  const [file] = await getDb()
     .select({ shortCode: uploadedFiles.shortCode })
     .from(uploadedFiles)
     .where(eq(uploadedFiles.id, recordId))
@@ -29,7 +29,7 @@ export async function assignShortCode(recordId: string): Promise<string | null> 
 export async function insertFileWithShortCode(
   file: Omit<typeof uploadedFiles.$inferInsert, 'shortCode'>,
 ): Promise<string> {
-  const { shortCode } = await withShortCodeRetry((code) => db
+  const { shortCode } = await withShortCodeRetry((code) => getDb()
     .insert(uploadedFiles)
     .values({ ...file, shortCode: code }))
   return shortCode
@@ -38,7 +38,7 @@ export async function insertFileWithShortCode(
 export async function resolveShortCode(code: string): Promise<string | null> {
   if (!isValidShortCode(code)) return null
 
-  const [file] = await db
+  const [file] = await getDb()
     .select({ publicLink: uploadedFiles.publicLink, serverUrl: users.serverUrl })
     .from(uploadedFiles)
     .leftJoin(users, eq(uploadedFiles.email, users.email))

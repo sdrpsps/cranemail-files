@@ -1,0 +1,62 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cranemail-files",
+  "main": "lib/worker.mjs",
+  "compatibility_date": "2026-10-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
+  },
+  "vars": {
+    "NEXT_PUBLIC_SITE_URL": "https://0o.tn",
+    "BETTER_AUTH_URL": "https://0o.tn",
+    "NEXT_PUBLIC_SMARTERMAIL_URL": "https://us1.workspace.org",
+    "SMARTERMAIL_CLIENT_ID": "cranemail-images-app",
+    "PUBLIC_FOLDER": "/public",
+    "TIMEZONE": "Asia/Shanghai"
+  },
+  "secrets": {
+    "required": ["BETTER_AUTH_SECRET", "ENCRYPTION_KEY"]
+  },
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cranemail-files",
+      "database_id": "795bb0ff-1f0d-409b-b638-5f68addb12bd",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "previews": {
+    "vars": {
+      "NEXT_PUBLIC_DISABLE_INDEXING": "1",
+      "NEXT_PUBLIC_SMARTERMAIL_URL": "https://us1.workspace.org",
+      "SMARTERMAIL_CLIENT_ID": "cranemail-images-app",
+      "PUBLIC_FOLDER": "/public",
+      "TIMEZONE": "Asia/Shanghai"
+    },
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "cranemail-files-preview",
+        "database_id": "<REPLACE_ME>"
+      }
+    ]
+  }
+}

@@ -5,7 +5,7 @@ import { GrammyError } from 'grammy'
 import { handleTelegramUpdate } from '@/lib/bot'
 import { configureBot, findBotRuntime, hasBotAccess, listUserBots } from '@/lib/bot/config'
 import { withBotRuntime } from '@/lib/bot/runtime'
-import { bindTokens, db, telegramBindings, telegramBots, telegramBotAccounts, telegramUpdates } from '@/lib/db'
+import { bindTokens, getDb, telegramBindings, telegramBots, telegramBotAccounts, telegramUpdates } from '@/lib/db'
 import { apiError, apiSuccess } from '@/lib/response'
 import { requireCurrentUser } from '../_middleware'
 
@@ -39,13 +39,14 @@ telegramApp.delete('/bots/:id', async (c) => {
   const user = await requireCurrentUser(c)
   const botId = c.req.param('id')
   if (!await hasBotAccess(botId, user.id)) return apiError(c, 'Bot not found.', 404)
-  await db.transaction(async (tx) => {
-    const owned = and(eq(telegramBindings.botId, botId), eq(telegramBindings.userId, user.id))
-    await tx.delete(telegramBindings).where(owned)
-    // Keep a removed selection unavailable until the Telegram user explicitly chooses again.
-    await tx.delete(bindTokens).where(and(eq(bindTokens.botId, botId), eq(bindTokens.userId, user.id)))
-    await tx.delete(telegramBotAccounts).where(and(eq(telegramBotAccounts.botId, botId), eq(telegramBotAccounts.userId, user.id)))
-  })
+  const db = getDb()
+  const owned = and(eq(telegramBindings.botId, botId), eq(telegramBindings.userId, user.id))
+  // Keep a removed selection unavailable until the Telegram user explicitly chooses again.
+  await db.batch([
+    db.delete(telegramBindings).where(owned),
+    db.delete(bindTokens).where(and(eq(bindTokens.botId, botId), eq(bindTokens.userId, user.id))),
+    db.delete(telegramBotAccounts).where(and(eq(telegramBotAccounts.botId, botId), eq(telegramBotAccounts.userId, user.id))),
+  ])
   return apiSuccess(c, null, 'Disconnected from this CraneMail account.')
 })
 
@@ -59,6 +60,7 @@ function matchesSecret(actual: string | undefined, expected: string) {
 async function receiveWebhook(c: Context, botId: string) {
   const runtime = await findBotRuntime(botId)
   if (!runtime) return c.json({ ok: false }, 404)
+  const db = getDb()
   const [bot] = await db.select({ secret: telegramBots.webhookSecret }).from(telegramBots).where(eq(telegramBots.id, botId))
   if (!bot?.secret || !matchesSecret(c.req.header('X-Telegram-Bot-Api-Secret-Token'), bot.secret)) {
     return c.json({ ok: false }, 403)

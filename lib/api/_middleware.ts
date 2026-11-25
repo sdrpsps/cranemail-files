@@ -8,6 +8,7 @@ import {
   SmarterMailSessionError,
 } from '@/lib/smartermail-session'
 import type { AppUser, SmarterMailAuthContext } from '@/lib/smartermail-session'
+
 type CurrentUser = Pick<AppUser, 'id' | 'email' | 'serverUrl'>
 
 export function forwardAuthCookies(c: Context, headers: Headers) {

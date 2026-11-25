@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm'
-import { db, smartermailSessions, users } from './db'
+import { getDb, smartermailSessions, users } from './db'
 import { decrypt, encrypt } from './crypto'
 import {
   SmarterMailClient,
@@ -43,7 +43,7 @@ export function resolveServerUrl(serverUrl?: string): string {
 }
 
 export async function getUserById(userId: string): Promise<AppUser | null> {
-  const [row] = await db
+  const [row] = await getDb()
     .select({
       id: users.id,
       email: users.email,
@@ -70,7 +70,7 @@ export async function upsertSmarterMailSession(userId: string, result: SmarterMa
   const encryptedAccessToken = encrypt(result.accessToken)
   const encryptedRefreshToken = encrypt(result.refreshToken)
 
-  await db
+  await getDb()
     .insert(smartermailSessions)
     .values({
       userId,
@@ -107,6 +107,8 @@ export async function getSmarterMailAuthForUser(
   }
 
   const session = await getSessionRow(userId)
+  const concurrentFlight = refreshFlights.get(userId)
+  if (concurrentFlight) return concurrentFlight
   const client = new SmarterMailClient(user.serverUrl)
 
   if (!options.forceRefresh && session?.accessToken && !shouldRefreshAccessToken(session.accessTokenExpires)) {
@@ -202,7 +204,7 @@ async function refreshOrReauthenticate(
 }
 
 async function getSessionRow(userId: string): Promise<SmarterMailSessionRow | null> {
-  const [row] = await db
+  const [row] = await getDb()
     .select({
       userId: smartermailSessions.userId,
       accessToken: smartermailSessions.accessToken,
@@ -225,7 +227,7 @@ async function saveRefreshedSession(
   refreshToken: string,
   refreshTokenExpires: string,
 ): Promise<boolean> {
-  const updated = await db
+  const updated = await getDb()
     .update(smartermailSessions)
     .set({
       accessToken: encrypt(accessToken),

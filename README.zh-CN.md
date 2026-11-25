@@ -70,34 +70,23 @@ CraneMail Files 把你的 CraneMail workspace 存储变成一个方便查找和�
 
 ## 部署自己的站点
 
-需要 Node.js **22 或更新版本**、pnpm，以及支持 workspace 存储的 CraneMail 账号。Telegram 集成可按需启用。
-
-有持久磁盘的 Node 服务器可以使用本地 SQLite；Vercel 等没有持久可写文件系统的环境需要配置远程 Turso/libSQL 数据库。
+需要 Node.js **24**、pnpm、用于 Workers 和 D1 的 Cloudflare 账号，以及支持 workspace 存储的 CraneMail 账号。Telegram 集成可按需启用。
 
 ### 1. 安装与配置
 
 克隆或下载仓库，进入项目目录后执行：
 
 ```bash
-pnpm install
-cp .env.example .env.local
+pnpm install --frozen-lockfile
+cp .dev.vars.example .dev.vars
 openssl rand -hex 32
 ```
 
 把生成的随机值填入 `ENCRYPTION_KEY`。再运行一次 `openssl rand -hex 32`，为 `BETTER_AUTH_SECRET` 生成独立的密钥。
 
-本地试用需要确认以下配置。
+默认部署配置读取 `wrangler.jsonc` 的 `vars`，`secrets.required` 声明必需的密钥名。把本地开发用的密钥值，以及覆盖正式域名的 `NEXT_PUBLIC_SITE_URL` / `BETTER_AUTH_URL`（如 `http://localhost:8787`）填在 Git 忽略的 `.dev.vars` 里。本地 Workers 构建和开发服务器无需 `.env` 或 `.env.local`。
 
-```env
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-PUBLIC_FOLDER=/public
-TIMEZONE=Asia/Shanghai
-ENCRYPTION_KEY=replace-with-your-generated-key
-BETTER_AUTH_SECRET=replace-with-your-separate-session-secret
-```
-
-公开部署时，**在构建前**把 `NEXT_PUBLIC_SITE_URL` 改为自己的 HTTPS 域名，例如 `https://files.example.com`。它用于生成短链接、canonical 地址、社交分享信息和站点地图。请填写域名根地址，不要附带路径、查询参数或锚点；修改后重新构建。
+公开部署时，在 `wrangler.jsonc` 的 `vars` 中把 `NEXT_PUBLIC_SITE_URL` 设为自己的 HTTPS 域名，例如 `https://files.example.com`。它用于生成短链接、canonical 地址、社交分享信息和站点地图。请填写域名根地址，不要附带路径、查询参数或锚点。修改后重新构建。
 
 ### 2. 初始化数据库并启动
 
@@ -106,54 +95,56 @@ pnpm db:migrate
 pnpm dev
 ```
 
-打开 [localhost:3000](http://localhost:3000)，登录并上传一个小文件。
+打开 [localhost:8787](http://localhost:8787)，登录并上传一个小文件。开发服务器通过 `initOpenNextCloudflareForDev()` 使用 Wrangler 本地 D1 数据库和 `.dev.vars`，支持热更新。
 
-在 Node 服务器上运行生产版本：
+### 分享 Cloudflare Worker Preview
+
+`pnpm preview` 会构建应用，然后通过 `wrangler preview` 在同一个 Worker 下创建或更新分支预览。Wrangler 默认使用当前 Git 分支名。Cloudflare 会返回跟随分支最新部署的固定地址，以及指向本次部署的地址。请用固定地址测试登录和短链接。
+
+1. 在 Cloudflare 控制台打开 Worker 的 **Domains** 页，在 **Worker URL** 下开启 **Preview**，启用 `workers.dev` 预览地址。预览地址默认公开，需要限制访问时可启用 Cloudflare Access。[Cloudflare 路由与访问设置](https://developers.cloudflare.com/workers/previews/custom-domains/)
+2. 运行 `pnpm exec wrangler d1 create cranemail-files-preview --update-config=false` 创建独立 D1。把数据库 UUID 填入 `wrangler.jsonc` 的 `previews.d1_databases` 和 `wrangler.preview-migrations.jsonc` 的 `d1_databases`，再运行 `pnpm exec wrangler d1 migrations apply PREVIEW_DB --remote --config wrangler.preview-migrations.jsonc`。使用同一预览 D1 的分支会共享数据和表结构。需要单独演练迁移的分支可在两份配置中使用自己的数据库。[Cloudflare D1 迁移说明](https://developers.cloudflare.com/workers/previews/resources/#d1-migrations)
+3. 首次部署时，通过 `--secrets-file` 传入仓库外的私有 JSON 文件，为 `BETTER_AUTH_SECRET` 和 `ENCRYPTION_KEY` 提供独立的值。也可以在 Cloudflare 设置 Previews Base 密钥。[Cloudflare 预览密钥说明](https://developers.cloudflare.com/workers/previews/configuration/#secrets)
+
+例如，预览名为 `feature-login`，Cloudflare 账号的 Workers 子域名为 `my-team` 时，可以这样运行。将示例域名和密钥文件路径换成自己的值。
 
 ```bash
-pnpm db:migrate
-pnpm build
-pnpm start
+PREVIEW_ORIGIN=https://feature-login-cranemail-files.my-team.workers.dev \
+  pnpm preview --name feature-login --secrets-file /path/to/preview-secrets.json
 ```
 
-使用 SQLite 时，确保 `local.db` 位于持久磁盘上。每次启动新版本前先执行数据库迁移；应用只检查数据库是否就绪，不会在处理请求时自动建表或升级表结构。
+测试上传、删除或 Telegram webhook 时，使用测试 CraneMail 账号和独立测试 bot。这些操作会实际调用上游服务。
 
-### 部署到 Vercel
+### 部署到 Cloudflare Workers
 
-1. 创建 Turso 数据库，取得数据库 URL 和访问 token。
-2. 在 Vercel 中导入仓库，使用 Next.js 项目类型。
-3. 为对应的部署环境配置下表中的环境变量，包括公开域名、稳定的加密密钥和会话密钥，以及 Turso 凭据。
-4. 安装命令使用 `pnpm install --frozen-lockfile`，构建命令使用 `pnpm db:migrate && pnpm build`。
-5. 部署后测试登录、小文件上传，以及复制出的分享链接。
+1. 运行 `pnpm exec wrangler login`，在 Cloudflare 账号创建 D1 数据库。在 `wrangler.jsonc` 里填写 Worker 名称和 D1 数据库 ID，使用 `DB` 作为 binding 名称。
+2. 在 `wrangler.jsonc` 的 `vars` 里设置正式 HTTPS 地址，再运行 `pnpm bundle`。配置已在 `secrets.required` 中声明两项必需的密钥名。
+3. 运行 `pnpm exec wrangler d1 migrations apply DB --remote`，迁移生产 D1。
+4. 在 Cloudflare 控制台或配置中绑定自定义域名。运行 `pnpm exec wrangler deploy`（或接入 Workers Builds 自动执行 `pnpm bundle` + `npx wrangler deploy`），复用现有的 Worker Secrets。首次部署新 Worker 时，追加 `--secrets-file /path/to/production-secrets.json`，在仓库外的私有 JSON 文件中提供两项密钥的值。验证登录、小文件上传和生成的短链。
 
-Vercel 上不要使用 `local.db` 回退存储。生产和预览环境应使用不同数据库，因为迁移命令会操作当前环境变量指向的数据库。
-
-上传大小和执行时间限制请参考[托管平台限制](https://vercel.com/docs/functions/limitations)。网页上传会经过应用服务器，因此托管平台和 CraneMail 账号的限制都会影响上传结果。
+网页上传由浏览器把文件送到 Worker，Worker 再流式封装为 CraneMail 的 multipart 请求。可上传大小受 [Workers 请求限制](https://developers.cloudflare.com/workers/platform/limits/)和 CraneMail 账号配额影响。
 
 ### 配置项速查
 
 | 环境变量 | 应该填写什么 |
 | --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | 应用的公开根地址；为空时回退到 `http://localhost:3000`。需要在构建前配置。 |
+| `NEXT_PUBLIC_SITE_URL` | 应用的公开根地址。需要在构建前配置。 |
+| `NEXT_PUBLIC_DISABLE_INDEXING` | 在线预览构建可设为 `1`。 |
 | `NEXT_PUBLIC_SMARTERMAIL_URL` | 默认 CraneMail 服务器，例如 `https://us1.workspace.org`。用户可在登录时修改服务器地址。 |
 | `PUBLIC_FOLDER` | 上传和同步使用的目录，默认 `/public`。建议使用专门的分享目录。 |
 | `TIMEZONE` | 日期目录和 bot 时间显示使用的时区，默认 `Asia/Shanghai`。 |
 | `ENCRYPTION_KEY` | 足够长、保密且稳定的密钥。用 `openssl rand -hex 32` 生成，并替换示例中的开发密钥。 |
 | `BETTER_AUTH_SECRET` | 保密且稳定的会话签名密钥。用 `openssl rand -hex 32` 单独生成。 |
 | `BETTER_AUTH_URL` | 可选的认证站点地址，默认使用 `NEXT_PUBLIC_SITE_URL`。预览部署等场景可设置为用户实际访问的地址。 |
-| `TURSO_DATABASE_URL` | 远程 libSQL 数据库地址；有持久磁盘的服务器可留空，使用 `local.db`。 |
-| `TURSO_AUTH_TOKEN` | 远程数据库需要的访问 token。 |
+| `UPLOAD_MAX_BYTES` | 可选的应用上传上限，单位为字节。 |
 | `SMARTERMAIL_CLIENT_ID` | 认证客户端标识，通常保留 `cranemail-files-app` 即可。 |
 
 Better Auth 通过签名的 HttpOnly Cookie 管理本站会话，会话在登录 30 天后到期。面板从应用数据库读取当前账号和文件列表。登录和绑定 Telegram 时会向 CraneMail 验证凭据。服务端加密保存 CraneMail 凭据，用于上传、同步、删除文件和清理空目录时续期授权。CraneMail 暂时不可用或拒绝文件操作时，本站会话仍然有效。退出登录会撤销当前浏览器的会话。
-
-从旧版会话实现升级时，先设置 `BETTER_AUTH_SECRET` 并运行 `pnpm db:migrate`，再启动新版本。用户需要重新登录一次来建立 Better Auth 会话。本次迁移保留现有账号、已上传文件和 Telegram 绑定。
 
 请部署到可信服务器，妥善保管凭据，并同时备份数据库与 `ENCRYPTION_KEY`。更换密钥后，已有加密凭据无法解密。用户需要重新登录以恢复工作区访问，也可能需要重新绑定 Telegram。
 
 ### 启用自己的 Telegram bot
 
-将 `NEXT_PUBLIC_SITE_URL` 设为站点的公开 HTTPS 地址，并保持 `ENCRYPTION_KEY` 稳定。如果从使用 `TELEGRAM_BOT_TOKEN` 环境变量的版本升级，请在网页添加机器人并重新绑定各个 CraneMail 账号。
+将 `NEXT_PUBLIC_SITE_URL` 设为站点的公开 HTTPS 地址，并保持 `ENCRYPTION_KEY` 稳定。
 
 在网页的 **Telegram Bots** 中添加 BotFather token 即可。每个机器人的接收地址为：
 
@@ -167,9 +158,9 @@ https://files.example.com/api/telegram/webhook/<bot-id>
 
 ## 常见问题
 
-**必须配置 Telegram 和 Turso 才能试用吗？**
+**本地试用需要 Cloudflare 账号吗？**
 
-不需要。本地使用 SQLite 和浏览器上传即可。需要手机上传时再启用 Telegram；托管环境需要远程数据库时再配置 Turso/libSQL。
+Wrangler 为本地预览提供 D1。线上部署需要 Cloudflare 账号。Telegram 可按需启用。
 
 **为什么看不到 workspace 中已有的文件？**
 
@@ -189,15 +180,15 @@ https://files.example.com/api/telegram/webhook/<bot-id>
 
 **为什么提示 “Database is not ready”？**
 
-对部署实际使用的数据库执行 `pnpm db:migrate`，并检查数据库 URL 和 token。只重启应用不会执行数据库迁移。
+使用部署对应的 Wrangler 配置执行 D1 迁移，并检查 `DB` binding 是否指向正确的数据库。
 
 **搜索引擎和社交分享会展示什么？**
 
-公开首页提供 canonical 地址和品牌分享图；配置了公开域名的部署只把首页加入站点地图。上传面板、API 响应和文件短链接包含 `noindex` 指令，本地地址和 Vercel 预览构建也设为 `noindex`。这些指令用于引导遵守规则的爬虫，不是访问权限控制。
+公开首页提供 canonical 地址和品牌分享图。生产部署只把首页加入站点地图。上传面板、API、短链接和已配置的预览构建使用 `noindex`。
 
 ## 参与开发
 
-项目使用 Next.js App Router、React、Hono、Drizzle/libSQL、shadcn/ui 和 Tailwind CSS。
+项目使用 Next.js App Router、OpenNext、Hono、Drizzle D1、shadcn/ui 和 Tailwind CSS。
 
 ```bash
 pnpm lint
@@ -205,6 +196,6 @@ pnpm exec tsc --noEmit
 pnpm test
 ```
 
-修改数据库时，更新 `lib/db/schema.ts`，执行 `pnpm db:generate`，检查生成的迁移文件，再运行 `pnpm db:migrate`。使用 `pnpm db:studio` 可打开数据库浏览器。
+修改数据库时，更新 `lib/db/schema.ts`，执行 `pnpm db:generate`，检查生成的迁移文件，再运行 `pnpm db:migrate` 验证本地 D1。
 
 品牌素材及可编辑的分享图 SVG 位于 [`public/brand`](./public/brand)，站点 metadata 集中在 [`lib/site.ts`](./lib/site.ts)。

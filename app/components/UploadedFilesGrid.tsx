@@ -127,7 +127,6 @@ interface UploadedFilesGridProps {
 
 const FILES_PER_PAGE = 12
 const THUMBNAIL_SIZE = 512
-const THUMBNAIL_QUALITY = 75
 
 function CopyOriginalLinkButton({
   file,
@@ -264,12 +263,8 @@ function FileThumbnail({
   compact?: boolean
   onPreview?: () => void
 }) {
-  const isSvg = /\.svg$/i.test(fileName)
-  const [stage, setStage] = useState<'optimized' | 'direct' | 'error'>(
-    isSvg ? 'direct' : 'optimized',
-  )
-  const imageCandidate =
-    isImageFile(fileName) && Boolean(publicUrl) && stage !== 'error'
+  const [failedUrl, setFailedUrl] = useState<string>()
+  const imageCandidate = isImageFile(fileName) && Boolean(publicUrl) && publicUrl !== failedUrl
   const ext = getFileExtension(fileName)
 
   if (imageCandidate) {
@@ -281,27 +276,14 @@ function FileThumbnail({
           className="group/thumb relative size-9 shrink-0 overflow-hidden rounded-lg border border-border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={`Preview ${fileName}`}
         >
-          {stage === 'optimized' ? (
-            <Image
-              src={publicUrl}
-              alt={fileName}
-              width={THUMBNAIL_SIZE}
-              height={THUMBNAIL_SIZE}
-              quality={THUMBNAIL_QUALITY}
-              onError={() => setStage('direct')}
-              className="size-full object-cover transition-transform duration-200 ease-out will-change-transform group-hover/thumb:scale-105"
-            />
-          ) : (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={publicUrl}
-              alt={fileName}
-              loading="lazy"
-              decoding="async"
-              onError={() => setStage('error')}
-              className="size-full object-cover transition-transform duration-200 ease-out will-change-transform group-hover/thumb:scale-105"
-            />
-          )}
+          <Image
+            src={publicUrl}
+            alt={fileName}
+            width={THUMBNAIL_SIZE}
+            height={THUMBNAIL_SIZE}
+            onError={() => setFailedUrl(publicUrl)}
+            className="size-full object-cover transition-transform duration-200 ease-out will-change-transform group-hover/thumb:scale-105"
+          />
         </button>
       )
     }
@@ -313,27 +295,14 @@ function FileThumbnail({
         className="group/thumb relative block size-full cursor-zoom-in overflow-hidden bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         title={`Preview ${fileName}`}
       >
-        {stage === 'optimized' ? (
-          <Image
-            src={publicUrl}
-            alt={fileName}
-            width={THUMBNAIL_SIZE}
-            height={THUMBNAIL_SIZE}
-            quality={THUMBNAIL_QUALITY}
-            onError={() => setStage('direct')}
-            className="size-full object-cover transition-transform duration-300 ease-out will-change-transform group-hover/thumb:scale-[1.03]"
-          />
-        ) : (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={publicUrl}
-            alt={fileName}
-            loading="lazy"
-            decoding="async"
-            onError={() => setStage('error')}
-            className="size-full object-cover transition-transform duration-300 ease-out will-change-transform group-hover/thumb:scale-[1.03]"
-          />
-        )}
+        <Image
+          src={publicUrl}
+          alt={fileName}
+          width={THUMBNAIL_SIZE}
+          height={THUMBNAIL_SIZE}
+          onError={() => setFailedUrl(publicUrl)}
+          className="size-full object-cover transition-transform duration-300 ease-out will-change-transform group-hover/thumb:scale-[1.03]"
+        />
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-150 group-hover/thumb:opacity-100">
           <Badge
             variant="secondary"
@@ -384,17 +353,13 @@ function ImagePreviewDialog({
 }) {
   const [loadedOriginalId, setLoadedOriginalId] = useState<string | null>(null)
   const [failedOriginalId, setFailedOriginalId] = useState<string | null>(null)
-  const [failedThumbId, setFailedThumbId] = useState<string | null>(null)
 
   const publicUrl = file ? getPublicUrl(file.publicLink, serverUrl) : ''
   const urlKey = file ? `lightbox-url-${file.id}` : ''
   const mdKey = file ? `lightbox-md-${file.id}` : ''
-  const isSvg = file ? /\.svg$/i.test(file.fileName) : false
   const originalLoaded = Boolean(file && loadedOriginalId === file.id)
   const originalError = Boolean(file && failedOriginalId === file.id)
-  const thumbError = Boolean(file && failedThumbId === file.id)
-  const showUnavailable =
-    !publicUrl || (originalError && (isSvg || thumbError))
+  const showUnavailable = !publicUrl || originalError
 
   return (
     <Dialog
@@ -420,55 +385,27 @@ function ImagePreviewDialog({
 
           <div className="flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-background">
             {!showUnavailable ? (
-              !isSvg && !thumbError ? (
-                <div className="relative inline-flex items-center justify-center">
-                  <Image
-                    key={`thumb-${file.id}`}
-                    src={publicUrl}
-                    alt={file.fileName}
-                    width={THUMBNAIL_SIZE}
-                    height={THUMBNAIL_SIZE}
-                    quality={THUMBNAIL_QUALITY}
-                    onError={() => setFailedThumbId(file.id)}
-                    className="block h-auto max-h-[72vh] w-auto max-w-[calc(90vw-2rem)] object-contain"
-                  />
-                  {!originalError && (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      key={`orig-${file.id}`}
-                      src={publicUrl}
-                      alt={file.fileName}
-                      decoding="async"
-                      onLoad={() => setLoadedOriginalId(file.id)}
-                      onError={() => setFailedOriginalId(file.id)}
-                      className={cn(
-                        'absolute inset-0 size-full object-contain transition-opacity duration-200',
-                        originalLoaded ? 'opacity-100' : 'opacity-0',
-                      )}
-                    />
-                  )}
-                  {!originalLoaded && !originalError && (
-                    <Badge
-                      variant="secondary"
-                      className="pointer-events-none absolute right-2.5 bottom-2.5 border border-border bg-popover/95 text-[11px] text-popover-foreground shadow-sm"
-                    >
-                      <Spinner data-icon="inline-start" />
-                      <span>Loading original…</span>
-                    </Badge>
-                  )}
-                </div>
-              ) : (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  key={`orig-${file.id}`}
+              <div className="relative inline-flex items-center justify-center">
+                <Image
+                  key={file.id}
                   src={publicUrl}
                   alt={file.fileName}
-                  decoding="async"
+                  width={THUMBNAIL_SIZE}
+                  height={THUMBNAIL_SIZE}
                   onLoad={() => setLoadedOriginalId(file.id)}
                   onError={() => setFailedOriginalId(file.id)}
                   className="block h-auto max-h-[72vh] w-auto max-w-[calc(90vw-2rem)] object-contain"
                 />
-              )
+                {!originalLoaded && (
+                  <Badge
+                    variant="secondary"
+                    className="pointer-events-none absolute right-2.5 bottom-2.5 border border-border bg-popover/95 text-[11px] text-popover-foreground shadow-sm"
+                  >
+                    <Spinner data-icon="inline-start" />
+                    <span>Loading original…</span>
+                  </Badge>
+                )}
+              </div>
             ) : (
               <Empty className="px-6 py-10">
                 <EmptyHeader>

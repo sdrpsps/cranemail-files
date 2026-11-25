@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-function inspectSite(url: string, environment = '') {
+function inspectSite(url: string, disableIndexing = '') {
   const result = spawnSync(
     process.execPath,
     [
@@ -25,7 +25,7 @@ function inspectSite(url: string, environment = '') {
       env: {
         ...process.env,
         NEXT_PUBLIC_SITE_URL: url,
-        VERCEL_ENV: environment,
+        NEXT_PUBLIC_DISABLE_INDEXING: disableIndexing,
       },
     },
   )
@@ -50,23 +50,22 @@ test('public metadata uses the configured origin and only lists the home page', 
   assert.equal(result.dashboard.openGraph.url, '/upload')
 })
 
-test('local and Vercel preview sites do not advertise indexable pages', () => {
-  for (const [url, environment] of [
+test('local and preview sites do not advertise indexable pages', () => {
+  for (const [url, disableIndexing] of [
     ['', ''],
     ['http://localhost:3000', ''],
     ['http://127.0.0.1:3000', ''],
     ['http://[::1]:3000', ''],
-    ['https://files.example.com', 'preview'],
-    ['https://files.example.com', 'development'],
+    ['https://files.example.com', '1'],
   ]) {
-    const result = inspectSite(url, environment)
-    assert.equal(result.metadata.robots.index, false, `${url} ${environment}`)
+    const result = inspectSite(url, disableIndexing)
+    assert.equal(result.metadata.robots.index, false, `${url} ${disableIndexing}`)
     assert.equal(result.metadata.robots.googleBot.index, false)
     assert.deepEqual(result.sitemap, [])
     assert.equal(result.robots.sitemap, undefined)
   }
   assert.equal(
-    inspectSite('https://files.example.com', 'production').metadata.robots.index,
+    inspectSite('https://files.example.com').metadata.robots.index,
     true,
   )
 })

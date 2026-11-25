@@ -1,21 +1,17 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { after, before, mock, test } from 'node:test'
 import { eq } from 'drizzle-orm'
-import { migrate } from 'drizzle-orm/libsql/migrator'
 import { SmarterMailClient, SmarterMailHttpError } from '../lib/smartermail'
 import type { SmarterMailFileItem } from '../lib/smartermail'
+import { createTestDatabase } from './d1-fixture'
 
-const tempDir = mkdtempSync(path.join(tmpdir(), 'cranemail-flows-'))
 const email = 'uploader@example.com'
 const existingUserId = 'existing-uploader'
 const authCookie = '__Secure-better-auth.session_token'
 const botToken = 'file-flow-test-token'
-let database: typeof import('../lib/db')
-let api: typeof import('../app/api/[[...route]]/route')
+let database: Awaited<ReturnType<typeof createTestDatabase>>
+let handleApiRequest: typeof import('../lib/api').handleApiRequest
 let shortlinks: typeof import('../lib/shortlink')
 let cookie = ''
 let uploadedId = ''
@@ -24,18 +20,17 @@ let folderFiles: SmarterMailFileItem[] = []
 const telegramMessages: string[] = []
 
 before(async () => {
-  process.env.TURSO_DATABASE_URL = `file:${path.join(tempDir, 'flows.db')}`
   process.env.NEXT_PUBLIC_SITE_URL = 'https://site.example'
   process.env.BETTER_AUTH_SECRET = randomBytes(32).toString('hex')
   process.env.ENCRYPTION_KEY = 'isolated-test-key'
-  database = await import('../lib/db')
-  await migrate(database.db, { migrationsFolder: './drizzle' })
+  database = await createTestDatabase()
+  await database.migrate()
   await database.db.insert(database.users).values({ id: existingUserId, email })
   await database.db.insert(database.appSessions).values({
     id: 'legacy-session', userId: existingUserId, expiresAt: '2099-01-01T00:00:00.000Z',
   })
   shortlinks = await import('../lib/shortlink')
-  api = await import('../app/api/[[...route]]/route')
+  handleApiRequest = (await import('../lib/api')).handleApiRequest
   mock.method(SmarterMailClient.prototype, 'authenticateUser', async () => ({
     success: true, emailAddress: email, username: 'uploader', isAdmin: false, isDomainAdmin: false,
     accessToken: 'test-access', refreshToken: 'test-refresh',
@@ -48,6 +43,16 @@ before(async () => {
   mock.method(SmarterMailClient.prototype, 'uploadFile', async (_token: string, _buffer: Buffer, fileName: string) => ({
     success: true, uploadData: { [fileName]: { id: `remote-${fileName}` } },
   }))
+  mock.method(SmarterMailClient.prototype, 'ensureFolderExists', async () => {})
+  mock.method(SmarterMailClient.prototype, 'sendFileStream', async (
+    _token: string,
+    file: ReadableStream<Uint8Array>,
+    { fileName, size, mode }: Parameters<SmarterMailClient['sendFileStream']>[2],
+  ) => {
+    assert.equal(mode, 'fixed')
+    assert.equal((await new Response(file).arrayBuffer()).byteLength, size)
+    return { success: true, uploadData: { [fileName]: { id: `remote-${fileName}` } } }
+  })
   mock.method(SmarterMailClient.prototype, 'generatePublicLink', async (_token: string, fileId: string) => ({
     success: true, publicLink: `/d/${fileId}`,
   }))
@@ -81,10 +86,9 @@ before(async () => {
   cookie = sessionCookie.split(';')[0]
 })
 
-after(() => {
+after(async () => {
   mock.restoreAll()
-  database?.client.close()
-  rmSync(tempDir, { recursive: true, force: true })
+  await database?.dispose()
 })
 
 function fileItem(id: string): SmarterMailFileItem {
@@ -96,7 +100,7 @@ function fileItem(id: string): SmarterMailFileItem {
 }
 
 function signIn(origin = 'https://site.example') {
-  return api.POST(new Request('https://site.example/api/auth/login', {
+  return handleApiRequest(new Request('https://site.example/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: origin },
     body: JSON.stringify({
@@ -106,14 +110,29 @@ function signIn(origin = 'https://site.example') {
 }
 
 function getMe(sessionCookie: string) {
-  return api.GET(new Request('https://site.example/api/auth/me', {
+  return handleApiRequest(new Request('https://site.example/api/auth/me', {
     headers: { Cookie: sessionCookie },
   }))
 }
 
 function syncFiles() {
-  return api.POST(new Request('https://site.example/api/files/sync', {
+  return handleApiRequest(new Request('https://site.example/api/files/sync', {
     method: 'POST', headers: { Cookie: cookie },
+  }))
+}
+
+function webUpload(fileName: string, requestId: string = crypto.randomUUID(), signal?: AbortSignal) {
+  const body = new File(['image-content'], fileName, { type: 'image/png' })
+  return handleApiRequest(new Request('https://site.example/api/upload', {
+    method: 'POST',
+    headers: {
+      Cookie: cookie,
+      'X-Upload-Id': requestId,
+      'X-Upload-Name': encodeURIComponent(fileName),
+      'X-Upload-Size': String(body.size),
+    },
+    body,
+    signal,
   }))
 }
 
@@ -142,11 +161,7 @@ test('SmarterMail rejection and untrusted login origins do not create app sessio
 })
 
 test('web uploads return a stored code, short URL, and absolute original URL', async () => {
-  const form = new FormData()
-  form.append('file', new File(['image-content'], 'web-photo.png', { type: 'image/png' }))
-  const response = await api.POST(new Request('https://site.example/api/upload', {
-    method: 'POST', headers: { Cookie: cookie }, body: form,
-  }))
+  const response = await webUpload('web-photo.png')
   assert.equal(response.status, 200)
   const { data } = await response.json()
   uploadedId = data.id
@@ -158,7 +173,7 @@ test('web uploads return a stored code, short URL, and absolute original URL', a
 })
 
 test('GET /files exposes the same code and short URL', async () => {
-  const response = await api.GET(new Request('https://site.example/api/files', {
+  const response = await handleApiRequest(new Request('https://site.example/api/files', {
     headers: { Cookie: cookie },
   }))
   assert.equal(response.status, 200)
@@ -183,7 +198,7 @@ test('local identity and the file list stay available when SmarterMail credentia
   })
 
   try {
-    const response = await api.GET(new Request('https://site.example/api/auth/me', {
+    const response = await handleApiRequest(new Request('https://site.example/api/auth/me', {
       headers: { Cookie: cookie },
     }))
     assert.equal(response.status, 200)
@@ -192,7 +207,7 @@ test('local identity and the file list stay available when SmarterMail credentia
       username: 'uploader', emailAddress: email, serverUrl: 'https://custom-mail.example', isTelegramBound: false,
     })
 
-    const files = await api.GET(new Request('https://site.example/api/files', {
+    const files = await handleApiRequest(new Request('https://site.example/api/files', {
       headers: { Cookie: cookie },
     }))
     assert.equal(files.status, 200)
@@ -268,7 +283,7 @@ test('file deletion checks local ownership before SmarterMail and keeps the sess
     accessToken: 'refreshed-access',
     accessTokenExpiration: new Date(Date.now() + 86_400_000).toISOString(),
   }))
-  const deleteFile = (id: string) => api.DELETE(new Request(`https://site.example/api/files/${id}`, {
+  const deleteFile = (id: string) => handleApiRequest(new Request(`https://site.example/api/files/${id}`, {
     method: 'DELETE', headers: { Cookie: cookie },
   }))
 
@@ -283,7 +298,7 @@ test('file deletion checks local ownership before SmarterMail and keeps the sess
   assert.deepEqual(deleteFiles.mock.calls.map(({ arguments: args }) => args[0]), ['test-access', 'refreshed-access'])
   assert.ok(await shortlinks.resolveShortCode(uploadedCode))
 
-  const me = await api.GET(new Request('https://site.example/api/auth/me', {
+  const me = await handleApiRequest(new Request('https://site.example/api/auth/me', {
     headers: { Cookie: cookie },
   }))
   assert.equal(me.status, 200)
@@ -291,11 +306,59 @@ test('file deletion checks local ownership before SmarterMail and keeps the sess
 })
 
 test('the existing delete endpoint removes the short-link record', async () => {
-  const response = await api.DELETE(new Request(`https://site.example/api/files/${uploadedId}`, {
+  const response = await handleApiRequest(new Request(`https://site.example/api/files/${uploadedId}`, {
     method: 'DELETE', headers: { Cookie: cookie },
   }))
   assert.equal(response.status, 200)
   assert.equal(await shortlinks.resolveShortCode(uploadedCode), null)
+})
+
+test('web upload retries finish indexing without resending the file to CraneMail', async (t) => {
+  const requestId = crypto.randomUUID()
+  const stream = t.mock.method(SmarterMailClient.prototype, 'sendFileStream')
+  let shareAllowed = false
+  t.mock.method(SmarterMailClient.prototype, 'generatePublicLink', async () => (
+    shareAllowed ? { success: true, publicLink: '/d/retry-photo' } : { success: false }
+  ))
+
+  assert.equal((await webUpload('retry-photo.png', requestId)).status, 502)
+  shareAllowed = true
+  const resumed = await webUpload('retry-photo.png', requestId)
+  assert.equal(resumed.status, 200)
+  const { data } = await resumed.json()
+  const replay = await webUpload('retry-photo.png', requestId)
+  assert.equal(replay.status, 200)
+  assert.deepEqual((await replay.json()).data, data)
+  assert.equal(stream.mock.callCount(), 1)
+  assert.equal((await webUpload('different.png', requestId)).status, 409)
+})
+
+test('a 401 during transmission cannot replay its body on authentication or client retry', async (t) => {
+  const stream = t.mock.method(SmarterMailClient.prototype, 'sendFileStream', async (
+    _token: string,
+    body: ReadableStream<Uint8Array>,
+  ) => {
+    await new Response(body).arrayBuffer()
+    throw new SmarterMailHttpError(401, 'Expired during upload')
+  })
+  const requestId = crypto.randomUUID()
+  assert.equal((await webUpload('rejected.png', requestId)).status, 502)
+  assert.equal((await webUpload('rejected.png', requestId)).status, 409)
+  assert.equal(stream.mock.callCount(), 1)
+})
+
+test('the size limit and canceled requests stop before upload transmission', async (t) => {
+  const stream = t.mock.method(SmarterMailClient.prototype, 'sendFileStream')
+  const previousLimit = process.env.UPLOAD_MAX_BYTES
+  process.env.UPLOAD_MAX_BYTES = '5'
+  try {
+    assert.equal((await webUpload('oversized.png')).status, 413)
+  } finally {
+    if (previousLimit === undefined) delete process.env.UPLOAD_MAX_BYTES
+    else process.env.UPLOAD_MAX_BYTES = previousLimit
+  }
+  assert.equal((await webUpload('canceled.png', crypto.randomUUID(), AbortSignal.abort())).status, 408)
+  assert.equal(stream.mock.callCount(), 0)
 })
 
 test('expired local sessions return 401 and clear the cookie', async () => {
@@ -305,7 +368,7 @@ test('expired local sessions return 401 and clear the cookie', async () => {
     .where(eq(database.authSessions.id, session.id))
 
   for (const route of ['auth/me', 'files']) {
-    const response = await api.GET(new Request(`https://site.example/api/${route}`, {
+    const response = await handleApiRequest(new Request(`https://site.example/api/${route}`, {
       headers: { Cookie: cookie },
     }))
     assert.equal(response.status, 401)
@@ -318,7 +381,7 @@ test('logout revokes only the session used for the request', async () => {
     .find((value) => value.startsWith(`${authCookie}=`))!.split(';')[0]
   const second = (await signIn()).headers.getSetCookie()
     .find((value) => value.startsWith(`${authCookie}=`))!.split(';')[0]
-  const logout = await api.POST(new Request('https://site.example/api/auth/logout', {
+  const logout = await handleApiRequest(new Request('https://site.example/api/auth/logout', {
     method: 'POST', headers: { Cookie: first, Origin: 'https://site.example' },
   }))
   assert.equal(logout.status, 200)

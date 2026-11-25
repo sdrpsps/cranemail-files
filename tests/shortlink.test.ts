@@ -1,32 +1,26 @@
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { after, before, test } from 'node:test'
 import { eq } from 'drizzle-orm'
-import { migrate } from 'drizzle-orm/libsql/migrator'
+import { createTestDatabase } from './d1-fixture'
 
-const tempDir = mkdtempSync(path.join(tmpdir(), 'cranemail-shortlink-'))
-let database: typeof import('../lib/db')
+let database: Awaited<ReturnType<typeof createTestDatabase>>
 let shortlinks: typeof import('../lib/shortlink')
 let route: typeof import('../app/s/[code]/route')
 let retry: typeof import('../lib/shortlink-code').withShortCodeRetry
 
 before(async () => {
-  process.env.TURSO_DATABASE_URL = `file:${path.join(tempDir, 'test.db')}`
   process.env.NEXT_PUBLIC_SITE_URL = 'https://site.example'
   process.env.NEXT_PUBLIC_SMARTERMAIL_URL = 'https://mail.example'
-  database = await import('../lib/db')
+  database = await createTestDatabase()
   shortlinks = await import('../lib/shortlink')
   route = await import('../app/s/[code]/route')
   retry = (await import('../lib/shortlink-code')).withShortCodeRetry
 })
 
-after(() => {
-  database?.client.close()
-  rmSync(tempDir, { recursive: true, force: true })
+after(async () => {
+  await database?.dispose()
 })
 
 function requestCode(code: string) {
@@ -36,14 +30,14 @@ function requestCode(code: string) {
 }
 
 test('requests require explicit migrations and do not create tables', async () => {
-  await assert.rejects(requestCode('Unknown'), /Database is not ready/)
-  const before = await database.client.execute("SELECT name FROM sqlite_schema WHERE type = 'table'")
-  assert.equal(before.rows.length, 0)
-  await migrate(database.db, { migrationsFolder: './drizzle' })
+  await assert.rejects(requestCode('Unknown'), /D1 is not ready/)
+  const before = await database.binding.prepare("SELECT name FROM sqlite_schema WHERE name = 'uploaded_files'").all()
+  assert.equal(before.results.length, 0)
+  await database.migrate()
   const response = await requestCode('Unknown')
   assert.equal(response.status, 404)
-  const columns = await database.client.execute('PRAGMA table_info(uploaded_files)')
-  assert.ok(columns.rows.some((column) => column.name === 'shortCode'))
+  const { results: columns }: { results: { name: string }[] } = await database.binding.prepare('PRAGMA table_info(uploaded_files)').all()
+  assert.ok(columns.some((column) => column.name === 'shortCode'))
 })
 
 test('new codes contain exactly seven lowercase base36 characters', () => {

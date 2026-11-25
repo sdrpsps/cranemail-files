@@ -1,17 +1,13 @@
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { after, before, mock, test } from 'node:test'
 import { and, eq } from 'drizzle-orm'
-import { migrate } from 'drizzle-orm/libsql/migrator'
+import { createTestDatabase } from './d1-fixture'
 
-const tempDir = mkdtempSync(path.join(tmpdir(), 'cranemail-telegram-'))
 const tokens = ['10001:abcdefghijklmnopqrstuvwxyz0123456789', '10002:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789']
 const emails = ['first@example.com', 'second@example.com', 'stranger@example.com']
-let database: typeof import('../lib/db')
-let api: typeof import('../app/api/[[...route]]/route')
+let database: Awaited<ReturnType<typeof createTestDatabase>>
+let handleApiRequest: typeof import('../lib/api').handleApiRequest
 let runtime: typeof import('../lib/bot/runtime')
 let botUsers: typeof import('../lib/bot/users')
 let decrypt: typeof import('../lib/crypto').decrypt
@@ -27,24 +23,20 @@ let networkFailure = false
 let onFileDownload: (() => Promise<void>) | undefined
 
 before(async () => {
-  process.env.TURSO_DATABASE_URL = `file:${path.join(tempDir, 'telegram.db')}`
   process.env.NEXT_PUBLIC_SITE_URL = 'https://site.example'
+  process.env.BETTER_AUTH_URL = 'https://site.example'
   process.env.BETTER_AUTH_SECRET = randomBytes(32).toString('hex')
   process.env.ENCRYPTION_KEY = 'isolated-telegram-test-key'
-  database = await import('../lib/db')
-  const legacyFolder = path.join(tempDir, 'legacy-migrations')
-  mkdirSync(path.join(legacyFolder, 'meta'), { recursive: true })
-  const journal = JSON.parse(readFileSync('drizzle/meta/_journal.json', 'utf8'))
-  journal.entries = journal.entries.slice(0, 2)
-  writeFileSync(path.join(legacyFolder, 'meta/_journal.json'), JSON.stringify(journal))
-  for (const entry of journal.entries) copyFileSync(`drizzle/${entry.tag}.sql`, path.join(legacyFolder, `${entry.tag}.sql`))
-  await migrate(database.db, { migrationsFolder: legacyFolder })
-  await database.client.execute("INSERT INTO users (id, email, telegramUserId) VALUES ('legacy-owner', 'legacy@example.com', '88')")
-  await database.client.execute("INSERT INTO bind_tokens (token, userId, expiresAt) VALUES ('legacy-token', 'legacy-owner', '2099-01-01T00:00:00.000Z')")
-  await database.client.execute("INSERT INTO app_sessions (id, userId, expiresAt) VALUES ('existing-session', 'legacy-owner', '2099-01-01T00:00:00.000Z')")
-  await database.client.execute("INSERT INTO uploaded_files (id, email, fileName, shortCode) VALUES ('existing-file', 'legacy@example.com', 'existing.png', 'existing-short')")
-  await migrate(database.db, { migrationsFolder: './drizzle' })
-  api = await import('../app/api/[[...route]]/route')
+  database = await createTestDatabase()
+  await database.migrate(2)
+  await database.binding.batch([
+    database.binding.prepare("INSERT INTO users (id, email, telegramUserId) VALUES ('legacy-owner', 'legacy@example.com', '88')"),
+    database.binding.prepare("INSERT INTO bind_tokens (token, userId, expiresAt) VALUES ('legacy-token', 'legacy-owner', '2099-01-01T00:00:00.000Z')"),
+    database.binding.prepare("INSERT INTO app_sessions (id, userId, expiresAt) VALUES ('existing-session', 'legacy-owner', '2099-01-01T00:00:00.000Z')"),
+    database.binding.prepare("INSERT INTO uploaded_files (id, email, fileName, shortCode) VALUES ('existing-file', 'legacy@example.com', 'existing.png', 'existing-short')"),
+  ])
+  await database.migrate()
+  handleApiRequest = (await import('../lib/api')).handleApiRequest
   runtime = await import('../lib/bot/runtime')
   botUsers = await import('../lib/bot/users')
   decrypt = (await import('../lib/crypto')).decrypt
@@ -107,14 +99,13 @@ before(async () => {
   }
 })
 
-after(() => {
+after(async () => {
   mock.restoreAll()
-  database?.client.close()
-  rmSync(tempDir, { recursive: true, force: true })
+  await database?.dispose()
 })
 
 function request(endpoint: string, method = 'GET', account?: number, body?: unknown) {
-  return api[method as 'GET' | 'POST' | 'DELETE'](new Request(`https://site.example/api${endpoint}`, {
+  return handleApiRequest(new Request(`https://site.example/api${endpoint}`, {
     method,
     headers: { ...(account !== undefined ? { Cookie: cookies[account] } : {}), 'Content-Type': 'application/json' },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -143,7 +134,7 @@ function callback(data: string, from = 42) {
 
 async function webhook(update: unknown, id = botId, secret?: string) {
   const bot = await getBot(id)
-  return api.POST(new Request(`https://site.example/api/telegram/webhook/${id}`, {
+  return handleApiRequest(new Request(`https://site.example/api/telegram/webhook/${id}`, {
     method: 'POST', headers: {
       'Content-Type': 'application/json',
       'X-Telegram-Bot-Api-Secret-Token': secret ?? bot.webhookSecret,
@@ -170,15 +161,16 @@ test('bot management requires a signed-in account', async () => {
 test('the consolidated migration preserves account data and removes obsolete Telegram configuration', async () => {
   const [user] = await database.db.select().from(database.users).where(eq(database.users.id, 'legacy-owner'))
   assert.equal(user.email, 'legacy@example.com')
-  const session = await database.client.execute("SELECT userId FROM app_sessions WHERE id = 'existing-session'")
-  assert.equal(session.rows[0].userId, 'legacy-owner')
+  const session = await database.binding.prepare("SELECT userId FROM app_sessions WHERE id = 'existing-session'").first()
+  assert.equal(session?.userId, 'legacy-owner')
   const [file] = await database.db.select().from(database.uploadedFiles).where(eq(database.uploadedFiles.id, 'existing-file'))
   assert.equal(file.fileName, 'existing.png')
   assert.equal(file.shortCode, 'existing-short')
-  const userColumns = await database.client.execute('PRAGMA table_info(users)')
-  assert.ok(!userColumns.rows.some((column) => column.name === 'telegramUserId'))
-  const tokenColumns = await database.client.execute('PRAGMA table_info(bind_tokens)')
-  const botColumn = tokenColumns.rows.find((column) => column.name === 'botId')
+  type Column = { name: string; notnull: number; dflt_value: unknown }
+  const { results: userColumns }: { results: Column[] } = await database.binding.prepare('PRAGMA table_info(users)').all()
+  assert.ok(!userColumns.some((column) => column.name === 'telegramUserId'))
+  const { results: tokenColumns }: { results: Column[] } = await database.binding.prepare('PRAGMA table_info(bind_tokens)').all()
+  const botColumn = tokenColumns.find((column) => column.name === 'botId')
   assert.equal(botColumn?.notnull, 1)
   assert.equal(botColumn?.dflt_value, null)
   assert.deepEqual(await database.db.select().from(database.bindTokens), [])
@@ -415,7 +407,7 @@ test('only explicitly configured bots and bot-specific webhooks are available', 
   assert.throws(() => runtime.getBotRuntime(), /configured Telegram bot context/)
   assert.equal((await request('/auth/telegram/bind-token', 'POST', 0, { password: 'password' })).status, 403)
   assert.equal((await webhook(message('/accounts'), 'unknown-bot', 'secret')).status, 404)
-  const old = await api.POST(new Request('https://site.example/api/telegram/webhook', { method: 'POST', body: JSON.stringify(message('/accounts')) }))
+  const old = await handleApiRequest(new Request('https://site.example/api/telegram/webhook', { method: 'POST', body: JSON.stringify(message('/accounts')) }))
   assert.equal(old.status, 404)
 })
 

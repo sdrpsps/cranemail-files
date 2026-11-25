@@ -2,6 +2,7 @@ declare global {
   namespace NodeJS {
     interface ProcessEnv {
       NEXT_PUBLIC_SITE_URL?: string
+      NEXT_PUBLIC_DISABLE_INDEXING?: string
       BETTER_AUTH_SECRET?: string
       BETTER_AUTH_URL?: string
       NEXT_PUBLIC_SMARTERMAIL_URL: string
@@ -9,11 +10,7 @@ declare global {
       PUBLIC_FOLDER?: string
       TIMEZONE?: string
       ENCRYPTION_KEY: string
-      TELEGRAM_BOT_TOKEN: string
-      TELEGRAM_BOT_USERNAME: string
-      ALLOWED_TELEGRAM_USERS?: string
-      TURSO_DATABASE_URL?: string
-      TURSO_AUTH_TOKEN?: string
+      UPLOAD_MAX_BYTES?: string
       NODE_ENV: 'development' | 'production' | 'test'
     }
   }

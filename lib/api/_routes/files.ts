@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { apiSuccess, apiError } from '@/lib/response'
 import { cleanupEmptyDateFolders, SmarterMailClient } from '@/lib/smartermail'
-import { db, uploadedFiles } from '@/lib/db'
+import { getDb, uploadedFiles } from '@/lib/db'
 import { getPublicUrl } from '@/lib/format'
 import { assignShortCode, buildShortUrl, insertFileWithShortCode } from '@/lib/shortlink'
 import nodeCrypto from 'crypto'
@@ -17,7 +17,7 @@ filesApp.get('/', async (c) => {
   try {
     const { email } = await requireCurrentUser(c)
 
-    const files = await db
+    const files = await getDb()
       .select()
       .from(uploadedFiles)
       .where(eq(uploadedFiles.email, email))
@@ -47,6 +47,7 @@ filesApp.delete('/:id', async (c) => {
 
     const { id: userId, email } = await requireCurrentUser(c)
     const ownedFile = and(eq(uploadedFiles.id, id), eq(uploadedFiles.email, email))
+    const db = getDb()
     const [file] = await db
       .select({
         fileId: uploadedFiles.fileId,
@@ -123,7 +124,7 @@ filesApp.post('/sync', async (c) => {
           if (publicLink) {
             const publicUrl = getPublicUrl(publicLink, user.serverUrl)
             // Check if the file record is already in our DB (either by fileId or publicLink)
-            const [existingFile] = await db
+            const [existingFile] = await getDb()
               .select({ id: uploadedFiles.id, shortCode: uploadedFiles.shortCode })
               .from(uploadedFiles)
               .where(

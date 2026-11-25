@@ -36,7 +36,7 @@ export const telegramClientOptions = {
     if (signal.aborted) controller.abort()
     else signal.addEventListener('abort', () => controller.abort(), { once: true })
     return globalThis.fetch(input, { ...options, signal: controller.signal })
-  }) as typeof fetch,
+  }) as unknown as NonNullable<ConstructorParameters<typeof Api>[1]>['fetch'],
 }
 
 export function getTelegramApi(token = getBotRuntime().token) {

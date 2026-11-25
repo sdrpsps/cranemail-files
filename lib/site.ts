@@ -1,20 +1,23 @@
 import type { Metadata } from 'next'
 
-const configuredUrl = new URL(
-  process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'http://localhost:3000',
-)
+export function getSiteUrl() {
+  const configuredUrl = new URL(
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'http://localhost:3000',
+  )
 
-if (!['http:', 'https:'].includes(configuredUrl.protocol)) {
-  throw new Error('NEXT_PUBLIC_SITE_URL must be an absolute HTTP or HTTPS URL.')
+  if (!['http:', 'https:'].includes(configuredUrl.protocol)) {
+    throw new Error('NEXT_PUBLIC_SITE_URL must be an absolute HTTP or HTTPS URL.')
+  }
+  return new URL(configuredUrl.origin)
 }
 
 // The application is served at the domain root. Keep tracking parameters and
 // accidental paths out of canonical URLs, social cards, and the sitemap.
-export const siteUrl = new URL(configuredUrl.origin)
+export const siteUrl = getSiteUrl()
 
 const isLocalhost = ['localhost', '127.0.0.1', '[::1]'].includes(siteUrl.hostname)
 const isPreview = Boolean(
-  process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production',
+  process.env.NEXT_PUBLIC_DISABLE_INDEXING === '1',
 )
 
 export const allowIndexing = !isLocalhost && !isPreview

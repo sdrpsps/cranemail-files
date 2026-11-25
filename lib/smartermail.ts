@@ -1,3 +1,5 @@
+import { createUploadMultipartRequest } from './upload-multipart'
+
 export interface SmarterMailLoginResponse {
   emailAddress: string
   accessToken: string
@@ -403,14 +405,45 @@ export class SmarterMailClient {
       await this.ensureFolderExists(accessToken, targetFolder)
     }
 
-    const response = await fetch(`${this.serverUrl}/api/v1/filestorage/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: formData,
-    })
+    const uploadResponse = await this.sendUpload(accessToken, { body: formData })
+    return this.recoverUploadMetadata(accessToken, uploadResponse, fileName, fileBuffer.length, targetFolder)
+  }
 
+  async sendFileStream(
+    accessToken: string,
+    file: ReadableStream<Uint8Array>,
+    { fileName, size, folderPath, mode, signal }: {
+      fileName: string
+      size: number
+      folderPath?: string
+      mode: 'chunked' | 'fixed'
+      signal?: AbortSignal
+    },
+  ): Promise<SmarterMailUploadResponse> {
+    const targetFolder = normalizeFolderPath(folderPath)
+    const controller = new AbortController()
+    const uploadSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
+    uploadSignal.throwIfAborted()
+
+    const request = createUploadMultipartRequest(file, {
+      fileName, fileType: getMimeType(fileName), size, folder: targetFolder === '/' ? '' : targetFolder,
+    }, mode, uploadSignal)
+    try {
+      return await this.sendUpload(accessToken, { ...request, redirect: 'manual' })
+    } finally {
+      controller.abort()
+      if (!request.body.locked) await request.body.cancel().catch(() => {})
+    }
+  }
+
+  private async sendUpload(accessToken: string, request: RequestInit): Promise<SmarterMailUploadResponse> {
+    const headers = new Headers(request.headers)
+    headers.set('Authorization', `Bearer ${accessToken}`)
+    const response = await fetch(`${this.serverUrl}/api/v1/filestorage/upload`, {
+      ...request,
+      method: 'POST',
+      headers,
+    })
     if (!response.ok) {
       const errorText = await response.text()
       throw new SmarterMailHttpError(
@@ -420,7 +453,16 @@ export class SmarterMailClient {
       )
     }
 
-    const uploadResponse = await response.json() as SmarterMailUploadResponse
+    return response.json() as Promise<SmarterMailUploadResponse>
+  }
+
+  async recoverUploadMetadata(
+    accessToken: string,
+    uploadResponse: SmarterMailUploadResponse,
+    fileName: string,
+    size: number,
+    folderPath?: string,
+  ): Promise<SmarterMailUploadResponse> {
     if (!uploadResponse.success) {
       return uploadResponse
     }
@@ -430,7 +472,8 @@ export class SmarterMailClient {
       return uploadResponse
     }
 
-    const recoveredFile = await this.findUploadedFile(accessToken, targetFolder, fileName, fileBuffer.length)
+    const targetFolder = normalizeFolderPath(folderPath)
+    const recoveredFile = await this.findUploadedFile(accessToken, targetFolder, fileName, size)
     if (!recoveredFile) {
       throw new Error(`SmarterMail upload succeeded but file metadata for "${fileName}" could not be recovered from ${targetFolder}`)
     }

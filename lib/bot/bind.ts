@@ -1,5 +1,5 @@
-import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm'
-import { bindTokens, db, telegramBindings, telegramSelections, users } from '../db'
+import { getDb } from '../db'
+import { redeemTelegramBindToken } from './redeem-bind-token'
 import { botMainMenu, escapeTelegramHtml, sendTelegramMessage } from './telegram-api'
 import { getBotRuntime } from './runtime'
 
@@ -13,28 +13,7 @@ export async function handleStartCommand(chatId: number, fromId: number, text: s
 
   const botId = getBotRuntime().id
   const telegramUserId = String(fromId)
-  const tokenForBot = and(eq(bindTokens.token, token), eq(bindTokens.botId, botId))
-  const redeemedByUpdate = and(tokenForBot,
-    eq(bindTokens.redeemedTelegramUserId, telegramUserId), eq(bindTokens.redeemedUpdateId, updateId))
-  const accountWithEmail = and(eq(users.id, bindTokens.userId), ne(users.email, ''))
-  const bindingFields = {
-    botId: bindTokens.botId,
-    telegramUserId: bindTokens.redeemedTelegramUserId,
-    userId: bindTokens.userId,
-  }
-  const [, , , [account]] = await db.batch([
-    db.update(bindTokens).set({ redeemedTelegramUserId: telegramUserId, redeemedUpdateId: updateId })
-      .where(and(tokenForBot, isNull(bindTokens.redeemedTelegramUserId), gt(bindTokens.expiresAt, new Date().toISOString()))),
-    db.insert(telegramBindings).select(
-      db.select({ ...bindingFields, createdAt: sql`CURRENT_TIMESTAMP`.as('createdAt') }).from(bindTokens)
-        .innerJoin(users, accountWithEmail).where(redeemedByUpdate),
-    ).onConflictDoNothing(),
-    db.insert(telegramSelections).select(
-      db.select(bindingFields).from(bindTokens).innerJoin(users, accountWithEmail).where(redeemedByUpdate),
-    ).onConflictDoNothing(),
-    db.select({ email: users.email, updateId: bindTokens.redeemedUpdateId }).from(bindTokens)
-      .leftJoin(users, and(accountWithEmail, redeemedByUpdate)).where(tokenForBot),
-  ])
+  const account = await redeemTelegramBindToken(getDb(), token, botId, telegramUserId, updateId)
 
   if (!account?.email) {
     const reason = account && account.updateId !== null

@@ -2,27 +2,28 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async headers() {
-    return ["/upload/:path*", "/api/:path*", "/s/:path*"].map((source) => ({
+    return ["/upload/:path*", "/s/:path*"].map((source) => ({
       source,
       headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
     }));
   },
-  images: {
-    minimumCacheTTL: 2592000,
-    qualities: [75, 80],
-    dangerouslyAllowLocalIP: process.env.NODE_ENV === "development",
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**",
-      },
-      {
-        protocol: "http",
-        hostname: "**",
-      },
-    ],
-  },
-  allowedDevOrigins: ["local-dev.bytespark.app"],
+  images: { unoptimized: true },
 };
 
 export default nextConfig;
+
+if (process.env.NODE_ENV === "development") {
+  import("@opennextjs/cloudflare").then(async ({ initOpenNextCloudflareForDev, getCloudflareContext }) => {
+    await initOpenNextCloudflareForDev();
+    try {
+      const { env } = getCloudflareContext();
+      for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+        if (typeof value === "string") {
+          process.env[key] = value;
+        }
+      }
+    } catch {
+      // Next.js loads next.config.ts in a second process where initOpenNextCloudflareForDev is a no-op.
+    }
+  });
+}

@@ -70,34 +70,23 @@ Use `/search <filename>` to find files in the selected account by part of their 
 
 ## Deploy your own instance
 
-You need Node.js **22 or newer**, pnpm, and a CraneMail account with workspace storage. Telegram integration is optional.
-
-For a persistent Node server, you can use local SQLite. For Vercel or another host without a persistent writable filesystem, configure a remote Turso/libSQL database.
+You need Node.js **24**, pnpm, a Cloudflare account for Workers and D1, and a CraneMail account with workspace storage. Telegram integration is optional.
 
 ### 1. Install and configure
 
 Clone or download this repository, open its directory, and run:
 
 ```bash
-pnpm install
-cp .env.example .env.local
+pnpm install --frozen-lockfile
+cp .dev.vars.example .dev.vars
 openssl rand -hex 32
 ```
 
 Put the generated value in `ENCRYPTION_KEY`. Run `openssl rand -hex 32` again to generate a separate value for `BETTER_AUTH_SECRET`.
 
-For a local trial, configure these values.
+Default deployment settings come from `vars` in `wrangler.jsonc`, and `secrets.required` lists the secret names. Put your local secret values—plus local overrides for `NEXT_PUBLIC_SITE_URL` and `BETTER_AUTH_URL` (e.g., `http://localhost:8787`)—in the Git-ignored `.dev.vars` file. The local Workers build and dev server need no `.env` or `.env.local` file.
 
-```env
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
-PUBLIC_FOLDER=/public
-TIMEZONE=Asia/Shanghai
-ENCRYPTION_KEY=replace-with-your-generated-key
-BETTER_AUTH_SECRET=replace-with-your-separate-session-secret
-```
-
-For a public deployment, set `NEXT_PUBLIC_SITE_URL` to your HTTPS domain **before building**, for example `https://files.example.com`. It controls short links, canonical URLs, social previews, and the sitemap. Use the domain root without a path, query string, or fragment. Rebuild after changing it.
+For a public deployment, set `NEXT_PUBLIC_SITE_URL` under `vars` in `wrangler.jsonc` to your HTTPS domain, such as `https://files.example.com`. It controls short links, canonical URLs, social previews, and the sitemap. Use the domain root without a path, query string, or fragment. Rebuild after changing it.
 
 ### 2. Initialize the database and start
 
@@ -106,54 +95,56 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Open [localhost:3000](http://localhost:3000), sign in, and upload a small file.
+Open [localhost:8787](http://localhost:8787), sign in, and upload a small file. The dev server uses Wrangler's local D1 database and `.dev.vars` via `initOpenNextCloudflareForDev()` with instant HMR.
 
-For a production Node server:
+### Share a Cloudflare Worker Preview
+
+`pnpm preview` builds the app and runs `wrangler preview` for the same Worker as production. Wrangler uses the current Git branch as the Preview name by default. Cloudflare returns a stable URL for the branch and a URL for the specific deployment. Use the stable URL for signing in and testing short links.
+
+1. In the Worker's **Domains** tab, turn on **Preview** under **Worker URL** to enable its `workers.dev` Preview URLs. These URLs are public by default. Use Cloudflare Access if the Preview needs restricted access. [Cloudflare routing and access](https://developers.cloudflare.com/workers/previews/custom-domains/)
+2. Create a separate D1 database with `pnpm exec wrangler d1 create cranemail-files-preview --update-config=false`. Fill in its UUID under `previews.d1_databases` in `wrangler.jsonc` and under `d1_databases` in `wrangler.preview-migrations.jsonc`. Run `pnpm exec wrangler d1 migrations apply PREVIEW_DB --remote --config wrangler.preview-migrations.jsonc` before deploying. Branches that use the same Preview D1 ID share data and schema changes. For an isolated branch, use a separate database in both files. [Cloudflare D1 migration guidance](https://developers.cloudflare.com/workers/previews/resources/#d1-migrations)
+3. On the first deployment, pass `--secrets-file` with a private JSON file outside the repository containing independent values for `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY`, or set these as Previews Base secrets in Cloudflare. [Cloudflare Preview secrets](https://developers.cloudflare.com/workers/previews/configuration/#secrets)
+
+For example, if the Preview is named `feature-login` and the Cloudflare account's Workers subdomain is `my-team`, run the following. Replace the example hostname and secret file path with your own values.
 
 ```bash
-pnpm db:migrate
-pnpm build
-pnpm start
+PREVIEW_ORIGIN=https://feature-login-cranemail-files.my-team.workers.dev \
+  pnpm preview --name feature-login --secrets-file /path/to/preview-secrets.json
 ```
 
-Keep `local.db` on persistent storage if you use SQLite. Run migrations before starting a new application version; the app checks database readiness and does not create or upgrade tables on incoming requests.
+Use a test CraneMail account and a separate test bot for write tests, since uploads and webhook changes still reach those external services.
 
-### Deploy to Vercel
+### Deploy to Cloudflare Workers
 
-1. Create a Turso database and obtain its URL and access token.
-2. Import your repository into Vercel as a Next.js project.
-3. Add the environment variables below to the appropriate deployment environment, including your public domain, stable encryption and session secrets, and the Turso credentials.
-4. Use `pnpm install --frozen-lockfile` as the install command and `pnpm db:migrate && pnpm build` as the build command.
-5. Deploy, then test sign-in, a small upload, and the copied share link.
+1. Run `pnpm exec wrangler login` and create a D1 database in your Cloudflare account. In `wrangler.jsonc`, set your Worker name and D1 database ID, keeping the binding named `DB`.
+2. Set the public HTTPS origin in `wrangler.jsonc` under `vars`, then run `pnpm bundle`. The config lists the two required secret names under `secrets.required`.
+3. Run `pnpm exec wrangler d1 migrations apply DB --remote` to migrate your production D1.
+4. Configure your custom domain in the Cloudflare dashboard or config. Run `pnpm exec wrangler deploy` (or connect Workers Builds to run `pnpm bundle` + `npx wrangler deploy`) to reuse the existing Worker secrets. On the first deploy of a new Worker, add `--secrets-file /path/to/production-secrets.json` and provide both values in that private JSON file outside the repository. Check sign-in, a small upload, and its short link.
 
-Do not use the `local.db` fallback on Vercel. Use separate databases for production and preview deployments: the migration command targets whichever database is configured.
-
-For upload-size and execution limits, check your [hosting plan's limits](https://vercel.com/docs/functions/limitations). This app sends browser uploads through its server, so your host and CraneMail account both affect which files can be uploaded.
+The browser sends file bytes to the Worker, which streams them into a CraneMail multipart upload. File sizes depend on the [Workers request limits](https://developers.cloudflare.com/workers/platform/limits/) and the CraneMail account's limits.
 
 ### Configuration reference
 
 | Variable | What to set |
 | --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | Public app origin. Defaults to `http://localhost:3000` when empty. Set before building. |
+| `NEXT_PUBLIC_SITE_URL` | Public app origin. Set before building. |
+| `NEXT_PUBLIC_DISABLE_INDEXING` | Set to `1` in hosted preview builds. |
 | `NEXT_PUBLIC_SMARTERMAIL_URL` | Default CraneMail server, such as `https://us1.workspace.org`. Users can change the server at sign-in. |
 | `PUBLIC_FOLDER` | Folder used for uploads and workspace sync; defaults to `/public`. Use a dedicated sharing folder. |
 | `TIMEZONE` | Timezone for date folders and bot timestamps; defaults to `Asia/Shanghai`. |
-| `ENCRYPTION_KEY` | A long, private, stable value. Generate one with `openssl rand -hex 32`; replace the example development key. |
+| `ENCRYPTION_KEY` | A long, private, stable value. Generate one with `openssl rand -hex 32`. |
 | `BETTER_AUTH_SECRET` | A private, stable session signing secret. Generate a separate value with `openssl rand -hex 32`. |
 | `BETTER_AUTH_URL` | Optional origin override for authentication. Defaults to `NEXT_PUBLIC_SITE_URL`. Set it to the URL users open if it differs, such as on a preview deployment. |
-| `TURSO_DATABASE_URL` | Remote libSQL URL, or leave empty to use `local.db` on a persistent server. |
-| `TURSO_AUTH_TOKEN` | Access token for the remote database, when required. |
+| `UPLOAD_MAX_BYTES` | Optional application upload limit in bytes. |
 | `SMARTERMAIL_CLIENT_ID` | Authentication client identifier; normally keep `cranemail-files-app`. |
 
 Better Auth manages the app session through a signed HttpOnly cookie that expires 30 days after sign-in. The dashboard reads the current account and file list from the app database. Sign-in and Telegram linking verify credentials with CraneMail. The server stores encrypted CraneMail credentials to renew access for workspace operations such as uploading, syncing, deleting files, and cleaning empty folders. If CraneMail is unavailable or rejects a file operation, the app session remains valid. Signing out revokes that browser's app session.
-
-When upgrading from the original session implementation, set `BETTER_AUTH_SECRET` and run `pnpm db:migrate` before starting the new version. Users need to sign in once to create a Better Auth session. This migration keeps existing accounts, uploaded files, and Telegram bindings.
 
 Deploy only on a server you trust, keep credentials private, and back up the database together with `ENCRYPTION_KEY`. Changing that key makes existing encrypted credentials unreadable. Users will need to sign in again to restore workspace access and may need to relink Telegram.
 
 ### Enable your Telegram bot
 
-Set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin and keep a stable `ENCRYPTION_KEY`. If upgrading from the version that used the `TELEGRAM_BOT_TOKEN` environment variable, add your bot on the dashboard and link each CraneMail account again.
+Set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin and keep a stable `ENCRYPTION_KEY`.
 
 Add your BotFather token in **Telegram Bots** on the dashboard. Each bot receives updates at:
 
@@ -167,9 +158,9 @@ A Telegram bot has one webhook. Connecting it here replaces its previous webhook
 
 ## Common questions
 
-**Do I need Telegram or Turso to try this?**
+**Do I need a Cloudflare account to try this locally?**
 
-No. Start locally with SQLite and browser uploads. Add Telegram when you need mobile uploads; add a remote database when your hosting environment requires one.
+Wrangler provides local D1 for the preview. A Cloudflare account is needed for a hosted deployment. Telegram is optional.
 
 **Why are existing workspace files missing?**
 
@@ -189,15 +180,15 @@ Check the bot token and `getWebhookInfo`. Generate a fresh binding link within i
 
 **Why does the app say “Database is not ready”?**
 
-Run `pnpm db:migrate` against the database used by the deployment. Check the database URL and token; restarting the app alone does not apply migrations.
+Run the D1 migration command using the Wrangler configuration for that deployment, and check its `DB` binding.
 
 **What appears in search engines and social previews?**
 
-The public home page has a canonical URL and a branded social card. The sitemap includes only that page on a configured public deployment. The dashboard, API responses, and file short links carry `noindex` directives; localhost and Vercel preview builds are also marked `noindex`. These directives guide compliant crawlers and are not access controls.
+The public home page has a canonical URL and a branded social card. The sitemap includes only that page on a configured public deployment. The dashboard, API responses, short links, and configured preview builds carry `noindex` directives.
 
 ## Contributing and development
 
-The app uses Next.js App Router, React, Hono, Drizzle/libSQL, shadcn/ui, and Tailwind CSS.
+The app uses Next.js App Router, OpenNext, Hono, Drizzle D1, shadcn/ui, and Tailwind CSS.
 
 ```bash
 pnpm lint
@@ -205,6 +196,6 @@ pnpm exec tsc --noEmit
 pnpm test
 ```
 
-For database changes, update `lib/db/schema.ts`, run `pnpm db:generate`, review the generated migration, and apply it with `pnpm db:migrate`. `pnpm db:studio` opens the database browser.
+For database changes, update `lib/db/schema.ts`, run `pnpm db:generate`, review the generated migration, and apply it locally with `pnpm db:migrate`.
 
 Brand assets and the editable social-card SVG live in [`public/brand`](./public/brand). Site metadata is defined in [`lib/site.ts`](./lib/site.ts).

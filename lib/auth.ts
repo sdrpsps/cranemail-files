@@ -8,8 +8,8 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { isUserTelegramBound } from './bot/users'
 import { encrypt } from './crypto'
-import { authAccounts, authSessions, authVerifications, db, users } from './db'
-import { siteUrl } from './site'
+import { authAccounts, authSessions, authVerifications, getDb, users } from './db'
+import { getSiteUrl } from './site'
 import { SmarterMailClient, SmarterMailHttpError } from './smartermail'
 import { resolveServerUrl, upsertSmarterMailSession } from './smartermail-session'
 
@@ -50,7 +50,7 @@ const smarterMailLogin = {
         encryptedPassword: encrypt(password),
         updatedAt: sql`CURRENT_TIMESTAMP`,
       }
-      const [user] = await db.insert(users)
+      const [user] = await getDb().insert(users)
         .values({ id: randomUUID(), email, ...profile })
         .onConflictDoUpdate({ target: users.email, set: profile })
         .returning({
@@ -93,13 +93,13 @@ const smarterMailLogin = {
   },
 } satisfies BetterAuthPlugin
 
-function createAuth() {
+export function getAuth() {
   return betterAuth({
-    baseURL: process.env.BETTER_AUTH_URL?.trim() || siteUrl.origin,
+    baseURL: process.env.BETTER_AUTH_URL?.trim() || getSiteUrl().origin,
     basePath: '/api/auth',
     secret: process.env.BETTER_AUTH_SECRET,
     telemetry: { enabled: false },
-    database: drizzleAdapter(db, {
+    database: drizzleAdapter(getDb(), {
       provider: 'sqlite',
       schema: {
         user: users,
@@ -119,10 +119,4 @@ function createAuth() {
     },
     plugins: [smarterMailLogin],
   })
-}
-
-let auth: ReturnType<typeof createAuth> | undefined
-
-export function getAuth() {
-  return auth ??= createAuth()
 }

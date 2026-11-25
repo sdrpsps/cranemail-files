@@ -1,5 +1,5 @@
 import { and, count, desc, eq, sql } from 'drizzle-orm'
-import { db, uploadedFiles, type UploadedFileRecord } from '../db'
+import { getDb, uploadedFiles, type UploadedFileRecord } from '../db'
 import { getPublicUrl } from '../format'
 import { buildShortUrl } from '../shortlink'
 import { botMainMenu, escapeTelegramHtml } from './telegram-api'
@@ -26,7 +26,7 @@ export function getRequestedFilesPage(text: string) {
 }
 
 export async function renderFilesList(user: UserRow, requestedPage: number) {
-  const [countRow] = await db
+  const [countRow] = await getDb()
     .select({ total: count() })
     .from(uploadedFiles)
     .where(eq(uploadedFiles.email, user.email))
@@ -42,7 +42,7 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
   const pageCount = Math.max(1, Math.ceil(total / BOT_FILES_PER_PAGE))
   const page = Math.min(Math.max(1, requestedPage), pageCount)
   const offset = (page - 1) * BOT_FILES_PER_PAGE
-  const files = await db
+  const files = await getDb()
     .select()
     .from(uploadedFiles)
     .where(eq(uploadedFiles.email, user.email))
@@ -76,7 +76,7 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
 }
 
 export async function renderFileSearch(user: UserRow, query: string) {
-  const matches = await db
+  const matches = await getDb()
     .select({ fileName: uploadedFiles.fileName, publicLink: uploadedFiles.publicLink, shortCode: uploadedFiles.shortCode })
     .from(uploadedFiles)
     .where(and(

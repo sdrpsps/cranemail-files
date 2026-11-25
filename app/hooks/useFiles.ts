@@ -94,6 +94,7 @@ export function useFiles() {
 
   const dragDepthRef = useRef(0)
   const activeBatchesRef = useRef(0)
+  const uploadControllers = useRef(new Set<AbortController>())
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const setFiles = useCallback((action: SetStateAction<UploadedFile[]>) => {
@@ -111,7 +112,9 @@ export function useFiles() {
       setFilesState(cached)
     }
 
+    const controllers = uploadControllers.current
     return () => {
+      for (const controller of controllers) controller.abort()
       if (copyTimerRef.current) {
         clearTimeout(copyTimerRef.current)
       }
@@ -137,14 +140,29 @@ export function useFiles() {
     }
   }, [setFiles])
 
-  const uploadSingleFile = useCallback(async (file: File): Promise<UploadedFile> => {
-    const formData = new FormData()
-    formData.append('file', file)
-
-    const res = await fetch('/api/upload', {
+  const uploadSingleFile = useCallback(async (
+    file: File,
+    item: UploadQueueItem,
+    signal: AbortSignal,
+  ): Promise<UploadedFile> => {
+    const send = () => fetch('/api/upload', {
       method: 'POST',
-      body: formData,
+      headers: {
+        'X-Upload-Id': item.id,
+        'X-Upload-Name': encodeURIComponent(item.fileName),
+        'X-Upload-Size': String(file.size),
+      },
+      body: file,
+      signal,
     })
+    let res = await send().catch((error: unknown) => {
+      if (signal.aborted) throw error
+      return null
+    })
+    if (!res || res.status >= 500) {
+      await res?.body?.cancel().catch(() => {})
+      res = await send()
+    }
 
     let data: {
       success?: boolean
@@ -209,13 +227,16 @@ export function useFiles() {
       let successCount = 0
       let failureCount = 0
       let lastErrorMessage = ''
+      const controller = new AbortController()
+      uploadControllers.current.add(controller)
 
       try {
         for (const { file, item } of queuedBatch) {
+          if (controller.signal.aborted) break
           try {
-            const uploaded = await uploadSingleFile(file)
+            const uploaded = await uploadSingleFile(file, item, controller.signal)
             successCount += 1
-            setFiles((prev) => [uploaded, ...prev])
+            setFiles((prev) => [uploaded, ...prev.filter((entry) => entry.id !== uploaded.id)])
             setUploadQueue((prev) =>
               prev.map((q) =>
                 q.id === item.id
@@ -260,6 +281,7 @@ export function useFiles() {
           toast.error(lastErrorMessage || 'Upload failed')
         }
       } finally {
+        uploadControllers.current.delete(controller)
         activeBatchesRef.current = Math.max(0, activeBatchesRef.current - 1)
         if (activeBatchesRef.current === 0) {
           setUploading(false)
