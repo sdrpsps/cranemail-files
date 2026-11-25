@@ -65,8 +65,23 @@ export function getPublicUrl(publicLink: string, serverUrl?: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/${publicLink.replace(/^\/+/, '')}`
 }
 
+export const THUMBNAIL_MAX_SOURCE_BYTES = 20 * 1024 * 1024
+
+export type ThumbnailVariant = 'grid' | 'list'
+
 export function isImageFile(fileName: string): boolean {
   return /\.(jpg|jpeg|png|gif|webp|svg|avif|bmp)$/i.test(fileName)
+}
+
+export function isTransformableImageFile(fileName: string, size?: number): boolean {
+  if (!/\.(jpe?g|png|webp)$/i.test(fileName)) {
+    return false
+  }
+  return size === undefined || size <= THUMBNAIL_MAX_SOURCE_BYTES
+}
+
+export function getThumbnailUrl(fileId: string, variant: ThumbnailVariant): string {
+  return `/api/files/${encodeURIComponent(fileId)}/thumbnail?variant=${variant}`
 }
 
 export function getFileExtension(fileName: string): string {

@@ -104,7 +104,9 @@ import {
   formatTimestamp,
   getFileExtension,
   getPublicUrl,
+  getThumbnailUrl,
   isImageFile,
+  isTransformableImageFile,
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -126,7 +128,10 @@ interface UploadedFilesGridProps {
 }
 
 const FILES_PER_PAGE = 12
-const THUMBNAIL_SIZE = 512
+const GRID_THUMBNAIL_WIDTH = 640
+const GRID_THUMBNAIL_HEIGHT = 400
+const LIST_THUMBNAIL_SIZE = 96
+const PREVIEW_IMAGE_SIZE = 1280
 
 function CopyOriginalLinkButton({
   file,
@@ -253,19 +258,31 @@ function SourceIndicator({ source }: { source: string }) {
 }
 
 function FileThumbnail({
+  fileId,
   fileName,
+  fileSize,
   publicUrl,
   compact = false,
   onPreview,
 }: {
+  fileId: string
   fileName: string
+  fileSize?: number
   publicUrl: string
   compact?: boolean
   onPreview?: () => void
 }) {
-  const [failedUrl, setFailedUrl] = useState<string>()
-  const imageCandidate = isImageFile(fileName) && Boolean(publicUrl) && publicUrl !== failedUrl
+  const [failedThumbnail, setFailedThumbnail] = useState(false)
+  const [failedOriginal, setFailedOriginal] = useState(false)
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  const thumbnailUrl =
+    fileId && isTransformableImageFile(fileName, fileSize)
+      ? getThumbnailUrl(fileId, compact ? 'list' : 'grid')
+      : ''
+  const activeSrc = thumbnailUrl && !failedThumbnail ? thumbnailUrl : publicUrl
+  const imageCandidate = isImageFile(fileName) && Boolean(activeSrc) && !failedOriginal
   const ext = getFileExtension(fileName)
+  const isLoaded = loadedSrc === activeSrc
 
   if (imageCandidate) {
     if (compact) {
@@ -277,13 +294,34 @@ function FileThumbnail({
           title={`Preview ${fileName}`}
         >
           <Image
-            src={publicUrl}
+            ref={(img) => {
+              if (img && img.complete && img.naturalWidth > 0 && loadedSrc !== activeSrc) {
+                setLoadedSrc(activeSrc)
+              }
+            }}
+            src={activeSrc}
             alt={fileName}
-            width={THUMBNAIL_SIZE}
-            height={THUMBNAIL_SIZE}
-            onError={() => setFailedUrl(publicUrl)}
-            className="size-full object-cover transition-transform duration-200 ease-out will-change-transform group-hover/thumb:scale-105"
+            width={LIST_THUMBNAIL_SIZE}
+            height={LIST_THUMBNAIL_SIZE}
+            onLoad={() => setLoadedSrc(activeSrc)}
+            onError={() => {
+              if (activeSrc === thumbnailUrl) {
+                setFailedThumbnail(true)
+              } else {
+                setFailedOriginal(true)
+              }
+            }}
+            className={cn(
+              'size-full object-cover transition-[transform,opacity] duration-200 ease-out will-change-transform group-hover/thumb:scale-105',
+              isLoaded ? 'opacity-100' : 'opacity-0',
+            )}
           />
+          {!isLoaded && (
+            <Skeleton
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 size-full rounded-none"
+            />
+          )}
         </button>
       )
     }
@@ -296,14 +334,38 @@ function FileThumbnail({
         title={`Preview ${fileName}`}
       >
         <Image
-          src={publicUrl}
+          ref={(img) => {
+            if (img && img.complete && img.naturalWidth > 0 && loadedSrc !== activeSrc) {
+              setLoadedSrc(activeSrc)
+            }
+          }}
+          src={activeSrc}
           alt={fileName}
-          width={THUMBNAIL_SIZE}
-          height={THUMBNAIL_SIZE}
-          onError={() => setFailedUrl(publicUrl)}
-          className="size-full object-cover transition-transform duration-300 ease-out will-change-transform group-hover/thumb:scale-[1.03]"
+          width={GRID_THUMBNAIL_WIDTH}
+          height={GRID_THUMBNAIL_HEIGHT}
+          onLoad={() => setLoadedSrc(activeSrc)}
+          onError={() => {
+            if (activeSrc === thumbnailUrl) {
+              setFailedThumbnail(true)
+            } else {
+              setFailedOriginal(true)
+            }
+          }}
+          className={cn(
+            'size-full object-cover transition-[transform,opacity] duration-300 ease-out will-change-transform group-hover/thumb:scale-[1.03]',
+            isLoaded ? 'opacity-100' : 'opacity-0',
+          )}
         />
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-150 group-hover/thumb:opacity-100">
+        {!isLoaded && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center bg-muted/40"
+          >
+            <Skeleton className="absolute inset-0 size-full rounded-none" />
+            <ImageIcon className="relative size-5 text-muted-foreground/50" />
+          </div>
+        )}
+        <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-150 group-hover/thumb:opacity-100">
           <Badge
             variant="secondary"
             className="border border-border bg-popover/95 text-popover-foreground shadow-sm"
@@ -353,12 +415,20 @@ function ImagePreviewDialog({
 }) {
   const [loadedOriginalId, setLoadedOriginalId] = useState<string | null>(null)
   const [failedOriginalId, setFailedOriginalId] = useState<string | null>(null)
+  const [failedThumbId, setFailedThumbId] = useState<string | null>(null)
 
   const publicUrl = file ? getPublicUrl(file.publicLink, serverUrl) : ''
+  const thumbnailUrl =
+    file && isTransformableImageFile(file.fileName, file.size)
+      ? getThumbnailUrl(file.id, 'grid')
+      : ''
   const urlKey = file ? `lightbox-url-${file.id}` : ''
   const mdKey = file ? `lightbox-md-${file.id}` : ''
   const originalLoaded = Boolean(file && loadedOriginalId === file.id)
   const originalError = Boolean(file && failedOriginalId === file.id)
+  const showThumbnailPlaceholder = Boolean(
+    file && thumbnailUrl && !originalLoaded && failedThumbId !== file.id,
+  )
   const showUnavailable = !publicUrl || originalError
 
   return (
@@ -386,15 +456,31 @@ function ImagePreviewDialog({
           <div className="flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-background">
             {!showUnavailable ? (
               <div className="relative inline-flex items-center justify-center">
+                {showThumbnailPlaceholder && (
+                  <Image
+                    key={`${file.id}-thumb`}
+                    src={thumbnailUrl}
+                    alt={file.fileName}
+                    width={GRID_THUMBNAIL_WIDTH}
+                    height={GRID_THUMBNAIL_HEIGHT}
+                    onError={() => setFailedThumbId(file.id)}
+                    className="block h-auto max-h-[72vh] w-auto max-w-[calc(90vw-2rem)] object-contain"
+                  />
+                )}
                 <Image
                   key={file.id}
                   src={publicUrl}
                   alt={file.fileName}
-                  width={THUMBNAIL_SIZE}
-                  height={THUMBNAIL_SIZE}
+                  width={PREVIEW_IMAGE_SIZE}
+                  height={PREVIEW_IMAGE_SIZE}
                   onLoad={() => setLoadedOriginalId(file.id)}
                   onError={() => setFailedOriginalId(file.id)}
-                  className="block h-auto max-h-[72vh] w-auto max-w-[calc(90vw-2rem)] object-contain"
+                  className={cn(
+                    'object-contain transition-opacity duration-200',
+                    showThumbnailPlaceholder && !originalLoaded
+                      ? 'pointer-events-none absolute inset-0 size-full opacity-0'
+                      : 'block h-auto max-h-[72vh] w-auto max-w-[calc(90vw-2rem)] opacity-100',
+                  )}
                 />
                 {!originalLoaded && (
                   <Badge
@@ -806,8 +892,10 @@ export function UploadedFilesGrid({
                       >
                         <div className="relative aspect-[16/10] w-full overflow-hidden border-b border-border bg-background">
                           <FileThumbnail
-                            key={publicUrl}
+                            key={`${file.id}-${publicUrl}`}
+                            fileId={file.id}
                             fileName={file.fileName}
+                            fileSize={file.size}
                             publicUrl={publicUrl}
                             onPreview={() => setPreviewTarget(file)}
                           />
@@ -988,8 +1076,10 @@ export function UploadedFilesGrid({
                             <TableCell className="max-w-[260px] px-3">
                               <div className="flex min-w-0 items-center gap-2.5">
                                 <FileThumbnail
-                                  key={publicUrl}
+                                  key={`${file.id}-${publicUrl}`}
+                                  fileId={file.id}
                                   fileName={file.fileName}
+                                  fileSize={file.size}
                                   publicUrl={publicUrl}
                                   compact
                                   onPreview={() => setPreviewTarget(file)}
