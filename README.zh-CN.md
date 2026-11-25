@@ -70,7 +70,7 @@ CraneMail Files 把你的 CraneMail workspace 存储变成一个方便查找和�
 
 ## 部署自己的站点
 
-需要 Node.js **20.9 或更新版本**、pnpm，以及支持 workspace 存储的 CraneMail 账号。Telegram 集成可按需启用。
+需要 Node.js **22 或更新版本**、pnpm，以及支持 workspace 存储的 CraneMail 账号。Telegram 集成可按需启用。
 
 有持久磁盘的 Node 服务器可以使用本地 SQLite；Vercel 等没有持久可写文件系统的环境需要配置远程 Turso/libSQL 数据库。
 
@@ -84,7 +84,9 @@ cp .env.example .env.local
 openssl rand -hex 32
 ```
 
-把生成的随机值填入 `ENCRYPTION_KEY`。本地试用至少需要确认以下配置：
+把生成的随机值填入 `ENCRYPTION_KEY`。再运行一次 `openssl rand -hex 32`，为 `BETTER_AUTH_SECRET` 生成独立的密钥。
+
+本地试用需要确认以下配置。
 
 ```env
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
@@ -92,6 +94,7 @@ NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
 ENCRYPTION_KEY=replace-with-your-generated-key
+BETTER_AUTH_SECRET=replace-with-your-separate-session-secret
 ```
 
 公开部署时，**在构建前**把 `NEXT_PUBLIC_SITE_URL` 改为自己的 HTTPS 域名，例如 `https://files.example.com`。它用于生成短链接、canonical 地址、社交分享信息和站点地图。请填写域名根地址，不要附带路径、查询参数或锚点；修改后重新构建。
@@ -119,7 +122,7 @@ pnpm start
 
 1. 创建 Turso 数据库，取得数据库 URL 和访问 token。
 2. 在 Vercel 中导入仓库，使用 Next.js 项目类型。
-3. 为对应的部署环境配置下表中的环境变量，包括公开域名、稳定的加密密钥和 Turso 凭据。
+3. 为对应的部署环境配置下表中的环境变量，包括公开域名、稳定的加密密钥和会话密钥，以及 Turso 凭据。
 4. 安装命令使用 `pnpm install --frozen-lockfile`，构建命令使用 `pnpm db:migrate && pnpm build`。
 5. 部署后测试登录、小文件上传，以及复制出的分享链接。
 
@@ -136,17 +139,21 @@ Vercel 上不要使用 `local.db` 回退存储。生产和预览环境应使用�
 | `PUBLIC_FOLDER` | 上传和同步使用的目录，默认 `/public`。建议使用专门的分享目录。 |
 | `TIMEZONE` | 日期目录和 bot 时间显示使用的时区，默认 `Asia/Shanghai`。 |
 | `ENCRYPTION_KEY` | 足够长、保密且稳定的密钥。用 `openssl rand -hex 32` 生成，并替换示例中的开发密钥。 |
+| `BETTER_AUTH_SECRET` | 保密且稳定的会话签名密钥。用 `openssl rand -hex 32` 单独生成。 |
+| `BETTER_AUTH_URL` | 可选的认证站点地址，默认使用 `NEXT_PUBLIC_SITE_URL`。预览部署等场景可设置为用户实际访问的地址。 |
 | `TURSO_DATABASE_URL` | 远程 libSQL 数据库地址；有持久磁盘的服务器可留空，使用 `local.db`。 |
 | `TURSO_AUTH_TOKEN` | 远程数据库需要的访问 token。 |
 | `SMARTERMAIL_CLIENT_ID` | 认证客户端标识，通常保留 `cranemail-files-app` 即可。 |
 
-浏览器通过 HttpOnly cookie 使用本地应用会话，会话在登录 30 天后到期。面板从应用数据库读取当前账号和文件列表。登录和绑定 Telegram 时会向 CraneMail 验证凭据。服务端加密保存 CraneMail 凭据，用于上传、同步、删除文件和清理空目录时续期授权。CraneMail 暂时不可用或拒绝文件操作时，本地会话仍然有效。退出登录会撤销当前浏览器的应用会话。
+Better Auth 通过签名的 HttpOnly Cookie 管理本站会话，会话在登录 30 天后到期。面板从应用数据库读取当前账号和文件列表。登录和绑定 Telegram 时会向 CraneMail 验证凭据。服务端加密保存 CraneMail 凭据，用于上传、同步、删除文件和清理空目录时续期授权。CraneMail 暂时不可用或拒绝文件操作时，本站会话仍然有效。退出登录会撤销当前浏览器的会话。
+
+从旧版会话实现升级时，先设置 `BETTER_AUTH_SECRET` 并运行 `pnpm db:migrate`，再启动新版本。用户需要重新登录一次来建立 Better Auth 会话。本次迁移保留现有账号、已上传文件和 Telegram 绑定。
 
 请部署到可信服务器，妥善保管凭据，并同时备份数据库与 `ENCRYPTION_KEY`。更换密钥后，已有加密凭据无法解密。用户需要重新登录以恢复工作区访问，也可能需要重新绑定 Telegram。
 
 ### 启用自己的 Telegram bot
 
-先设置 `NEXT_PUBLIC_SITE_URL` 为站点的公开 HTTPS 地址，并设置稳定的 `ENCRYPTION_KEY`。升级已有部署时，先运行 `pnpm db:migrate`，再启动新版本。迁移会保留 CraneMail 账号、会话和已上传文件；旧版 Telegram 绑定和待使用链接会被移除，需要在网页添加机器人并重新绑定各个 CraneMail 账号。
+将 `NEXT_PUBLIC_SITE_URL` 设为站点的公开 HTTPS 地址，并保持 `ENCRYPTION_KEY` 稳定。如果从使用 `TELEGRAM_BOT_TOKEN` 环境变量的版本升级，请在网页添加机器人并重新绑定各个 CraneMail 账号。
 
 在网页的 **Telegram Bots** 中添加 BotFather token 即可。每个机器人的接收地址为：
 

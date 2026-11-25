@@ -70,7 +70,7 @@ Use `/search <filename>` to find files in the selected account by part of their 
 
 ## Deploy your own instance
 
-You need Node.js **20.9 or newer**, pnpm, and a CraneMail account with workspace storage. Telegram integration is optional.
+You need Node.js **22 or newer**, pnpm, and a CraneMail account with workspace storage. Telegram integration is optional.
 
 For a persistent Node server, you can use local SQLite. For Vercel or another host without a persistent writable filesystem, configure a remote Turso/libSQL database.
 
@@ -84,7 +84,9 @@ cp .env.example .env.local
 openssl rand -hex 32
 ```
 
-Put the generated value in `ENCRYPTION_KEY`. For a local trial, the essential settings are:
+Put the generated value in `ENCRYPTION_KEY`. Run `openssl rand -hex 32` again to generate a separate value for `BETTER_AUTH_SECRET`.
+
+For a local trial, configure these values.
 
 ```env
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
@@ -92,6 +94,7 @@ NEXT_PUBLIC_SMARTERMAIL_URL=https://us1.workspace.org
 PUBLIC_FOLDER=/public
 TIMEZONE=Asia/Shanghai
 ENCRYPTION_KEY=replace-with-your-generated-key
+BETTER_AUTH_SECRET=replace-with-your-separate-session-secret
 ```
 
 For a public deployment, set `NEXT_PUBLIC_SITE_URL` to your HTTPS domain **before building**, for example `https://files.example.com`. It controls short links, canonical URLs, social previews, and the sitemap. Use the domain root without a path, query string, or fragment. Rebuild after changing it.
@@ -119,7 +122,7 @@ Keep `local.db` on persistent storage if you use SQLite. Run migrations before s
 
 1. Create a Turso database and obtain its URL and access token.
 2. Import your repository into Vercel as a Next.js project.
-3. Add the environment variables below to the appropriate deployment environment, including your public domain, a stable encryption key, and the Turso credentials.
+3. Add the environment variables below to the appropriate deployment environment, including your public domain, stable encryption and session secrets, and the Turso credentials.
 4. Use `pnpm install --frozen-lockfile` as the install command and `pnpm db:migrate && pnpm build` as the build command.
 5. Deploy, then test sign-in, a small upload, and the copied share link.
 
@@ -136,17 +139,21 @@ For upload-size and execution limits, check your [hosting plan's limits](https:/
 | `PUBLIC_FOLDER` | Folder used for uploads and workspace sync; defaults to `/public`. Use a dedicated sharing folder. |
 | `TIMEZONE` | Timezone for date folders and bot timestamps; defaults to `Asia/Shanghai`. |
 | `ENCRYPTION_KEY` | A long, private, stable value. Generate one with `openssl rand -hex 32`; replace the example development key. |
+| `BETTER_AUTH_SECRET` | A private, stable session signing secret. Generate a separate value with `openssl rand -hex 32`. |
+| `BETTER_AUTH_URL` | Optional origin override for authentication. Defaults to `NEXT_PUBLIC_SITE_URL`. Set it to the URL users open if it differs, such as on a preview deployment. |
 | `TURSO_DATABASE_URL` | Remote libSQL URL, or leave empty to use `local.db` on a persistent server. |
 | `TURSO_AUTH_TOKEN` | Access token for the remote database, when required. |
 | `SMARTERMAIL_CLIENT_ID` | Authentication client identifier; normally keep `cranemail-files-app`. |
 
-The browser holds an HttpOnly cookie for a local app session that expires 30 days after sign-in. The dashboard reads the current account and file list from the app database. Sign-in and Telegram linking verify credentials with CraneMail. The server stores encrypted CraneMail credentials to renew access for workspace operations such as uploading, syncing, deleting files, and cleaning empty folders. If CraneMail is unavailable or rejects a file operation, the local session remains valid. Signing out revokes that browser's app session.
+Better Auth manages the app session through a signed HttpOnly cookie that expires 30 days after sign-in. The dashboard reads the current account and file list from the app database. Sign-in and Telegram linking verify credentials with CraneMail. The server stores encrypted CraneMail credentials to renew access for workspace operations such as uploading, syncing, deleting files, and cleaning empty folders. If CraneMail is unavailable or rejects a file operation, the app session remains valid. Signing out revokes that browser's app session.
+
+When upgrading from the original session implementation, set `BETTER_AUTH_SECRET` and run `pnpm db:migrate` before starting the new version. Users need to sign in once to create a Better Auth session. This migration keeps existing accounts, uploaded files, and Telegram bindings.
 
 Deploy only on a server you trust, keep credentials private, and back up the database together with `ENCRYPTION_KEY`. Changing that key makes existing encrypted credentials unreadable. Users will need to sign in again to restore workspace access and may need to relink Telegram.
 
 ### Enable your Telegram bot
 
-Set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin and keep a stable `ENCRYPTION_KEY`. When upgrading, run `pnpm db:migrate` before starting the new version. The migration preserves CraneMail accounts, sessions, and uploaded files. Previous Telegram bindings and pending binding links are removed; add your bot on the dashboard and link each CraneMail account again.
+Set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin and keep a stable `ENCRYPTION_KEY`. If upgrading from the version that used the `TELEGRAM_BOT_TOKEN` environment variable, add your bot on the dashboard and link each CraneMail account again.
 
 Add your BotFather token in **Telegram Bots** on the dashboard. Each bot receives updates at:
 

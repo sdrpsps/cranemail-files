@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -10,6 +11,8 @@ import type { SmarterMailFileItem } from '../lib/smartermail'
 
 const tempDir = mkdtempSync(path.join(tmpdir(), 'cranemail-flows-'))
 const email = 'uploader@example.com'
+const existingUserId = 'existing-uploader'
+const authCookie = '__Secure-better-auth.session_token'
 const botToken = 'file-flow-test-token'
 let database: typeof import('../lib/db')
 let api: typeof import('../app/api/[[...route]]/route')
@@ -23,9 +26,14 @@ const telegramMessages: string[] = []
 before(async () => {
   process.env.TURSO_DATABASE_URL = `file:${path.join(tempDir, 'flows.db')}`
   process.env.NEXT_PUBLIC_SITE_URL = 'https://site.example'
+  process.env.BETTER_AUTH_SECRET = randomBytes(32).toString('hex')
   process.env.ENCRYPTION_KEY = 'isolated-test-key'
   database = await import('../lib/db')
   await migrate(database.db, { migrationsFolder: './drizzle' })
+  await database.db.insert(database.users).values({ id: existingUserId, email })
+  await database.db.insert(database.appSessions).values({
+    id: 'legacy-session', userId: existingUserId, expiresAt: '2099-01-01T00:00:00.000Z',
+  })
   shortlinks = await import('../lib/shortlink')
   api = await import('../app/api/[[...route]]/route')
   mock.method(SmarterMailClient.prototype, 'authenticateUser', async () => ({
@@ -62,15 +70,15 @@ before(async () => {
     throw new Error(`Unexpected network request in isolated test: ${url}`)
   })
 
-  const login = await api.POST(new Request('https://site.example/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: email, password: 'test-password', serverUrl: 'https://custom-mail.example/',
-    }),
-  }))
+  const login = await signIn()
   assert.equal(login.status, 200)
-  cookie = login.headers.get('Set-Cookie')!.split(';')[0]
+  const sessionCookie = login.headers.getSetCookie().find((value) => value.startsWith(`${authCookie}=`))
+  assert.ok(sessionCookie)
+  assert.match(sessionCookie, /;\s*HttpOnly/i)
+  assert.match(sessionCookie, /;\s*Secure/i)
+  assert.match(sessionCookie, /;\s*SameSite=Lax/i)
+  assert.match(sessionCookie, /;\s*Max-Age=2592000/i)
+  cookie = sessionCookie.split(';')[0]
 })
 
 after(() => {
@@ -87,11 +95,51 @@ function fileItem(id: string): SmarterMailFileItem {
   }
 }
 
+function signIn(origin = 'https://site.example') {
+  return api.POST(new Request('https://site.example/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({
+      username: email, password: 'test-password', serverUrl: 'https://custom-mail.example/',
+    }),
+  }))
+}
+
+function getMe(sessionCookie: string) {
+  return api.GET(new Request('https://site.example/api/auth/me', {
+    headers: { Cookie: sessionCookie },
+  }))
+}
+
 function syncFiles() {
   return api.POST(new Request('https://site.example/api/files/sync', {
     method: 'POST', headers: { Cookie: cookie },
   }))
 }
+
+test('Better Auth signs the session cookie and reuses the existing SmarterMail user ID', async () => {
+  const [session] = await database.db.select().from(database.authSessions)
+  assert.equal(session.userId, existingUserId)
+  const lifetime = session.expiresAt.getTime() - session.createdAt.getTime()
+  assert.ok(Math.abs(lifetime - 30 * 24 * 60 * 60 * 1000) < 1_000)
+  assert.equal((await getMe(cookie)).status, 200)
+  assert.equal((await getMe(`${authCookie}=${session.token}`)).status, 401)
+  assert.equal((await getMe('app_session_id=legacy-session')).status, 401)
+})
+
+test('SmarterMail rejection and untrusted login origins do not create app sessions', async (t) => {
+  const authenticate = t.mock.method(SmarterMailClient.prototype, 'authenticateUser', async () => ({
+    success: false, message: 'Invalid credentials',
+  }))
+  const rejectedOrigin = await signIn('https://other.example')
+  assert.equal(rejectedOrigin.status, 403)
+  assert.equal(authenticate.mock.callCount(), 0)
+  const rejectedCredentials = await signIn()
+  assert.equal(rejectedCredentials.status, 401)
+  assert.equal(rejectedCredentials.headers.get('Set-Cookie'), null)
+  assert.equal(authenticate.mock.callCount(), 1)
+  assert.equal((await database.db.select().from(database.authSessions)).length, 1)
+})
 
 test('web uploads return a stored code, short URL, and absolute original URL', async () => {
   const form = new FormData()
@@ -251,16 +299,32 @@ test('the existing delete endpoint removes the short-link record', async () => {
 })
 
 test('expired local sessions return 401 and clear the cookie', async () => {
-  const [session] = await database.db.select().from(database.appSessions)
-  await database.db.update(database.appSessions)
-    .set({ expiresAt: '2000-01-01T00:00:00.000Z' })
-    .where(eq(database.appSessions.id, session.id))
+  const [session] = await database.db.select().from(database.authSessions)
+  await database.db.update(database.authSessions)
+    .set({ expiresAt: new Date('2000-01-01T00:00:00.000Z') })
+    .where(eq(database.authSessions.id, session.id))
 
   for (const route of ['auth/me', 'files']) {
     const response = await api.GET(new Request(`https://site.example/api/${route}`, {
       headers: { Cookie: cookie },
     }))
     assert.equal(response.status, 401)
-    assert.match(response.headers.get('Set-Cookie') ?? '', /^app_session_id=;/)
+    assert.ok(response.headers.getSetCookie().some((value) => value.startsWith(`${authCookie}=;`)))
   }
+})
+
+test('logout revokes only the session used for the request', async () => {
+  const first = (await signIn()).headers.getSetCookie()
+    .find((value) => value.startsWith(`${authCookie}=`))!.split(';')[0]
+  const second = (await signIn()).headers.getSetCookie()
+    .find((value) => value.startsWith(`${authCookie}=`))!.split(';')[0]
+  const logout = await api.POST(new Request('https://site.example/api/auth/logout', {
+    method: 'POST', headers: { Cookie: first, Origin: 'https://site.example' },
+  }))
+  assert.equal(logout.status, 200)
+  assert.deepEqual((await logout.json()).data, null)
+  assert.ok(logout.headers.getSetCookie().some((value) => value.startsWith(`${authCookie}=;`)))
+  assert.equal((await getMe(first)).status, 401)
+  assert.equal((await getMe(second)).status, 200)
+  assert.equal((await database.db.select().from(database.authSessions)).length, 1)
 })

@@ -2,6 +2,8 @@ declare global {
   namespace NodeJS {
     interface ProcessEnv {
       NEXT_PUBLIC_SITE_URL?: string
+      BETTER_AUTH_SECRET?: string
+      BETTER_AUTH_URL?: string
       NEXT_PUBLIC_SMARTERMAIL_URL: string
       SMARTERMAIL_CLIENT_ID: string
       PUBLIC_FOLDER?: string

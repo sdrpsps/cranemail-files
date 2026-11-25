@@ -59,6 +59,6 @@ export interface UserRow {
   id: string
   email: string
   serverUrl: string
-  createdAt?: string
-  updatedAt?: string
+  createdAt?: Date
+  updatedAt?: Date
 }

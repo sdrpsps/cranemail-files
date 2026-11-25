@@ -1,93 +1,40 @@
 import { eq, sql } from 'drizzle-orm'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { getCookie } from 'hono/cookie'
+import { getAuth } from '@/lib/auth'
 import { apiSuccess, apiError } from '@/lib/response'
 import { SmarterMailClient } from '@/lib/smartermail'
 import { encrypt } from '@/lib/crypto'
 import { findBotRuntime, hasBotAccess } from '@/lib/bot/config'
 import { isUserTelegramBound } from '@/lib/bot/users'
-import { appSessions, bindTokens, db, users } from '@/lib/db'
-import {
-  resolveServerUrl,
-  upsertSmarterMailSession,
-} from '@/lib/smartermail-session'
+import { bindTokens, db, users } from '@/lib/db'
+import { upsertSmarterMailSession } from '@/lib/smartermail-session'
 import nodeCrypto from 'crypto'
 import {
-  APP_SESSION_COOKIE,
-  clearAuthCookies,
-  createAppSession,
+  forwardAuthCookies,
   getCurrentUser,
   requireCurrentUser,
-  setAppSessionCookie,
 } from '../_middleware'
 
 const authApp = new Hono()
 
-// POST /login
-authApp.post('/login', async (c) => {
-  try {
-    const { username, password, serverUrl } = await c.req.json()
+async function appAuthResponse(c: Context, request: Request, message: string, includeData: boolean) {
+  const response = await getAuth().handler(request)
+  c.header('Cache-Control', 'no-store')
+  forwardAuthCookies(c, response.headers)
+  const retryAfter = response.headers.get('Retry-After')
+  if (retryAfter) c.header('Retry-After', retryAfter)
 
-    if (!username || !password) {
-      return apiError(c, 'Username and password are required', 400)
-    }
-
-    const resolvedServerUrl = resolveServerUrl(serverUrl)
-    const client = new SmarterMailClient(resolvedServerUrl)
-    const result = await client.authenticateUser(username, password)
-
-    if (!result.success) {
-      return apiError(c, result.message || 'Authentication failed', 401)
-    }
-
-    const encryptedPassword = encrypt(password)
-    const newUserId = nodeCrypto.randomUUID()
-
-    const [dbUser] = await db
-      .insert(users)
-      .values({
-        id: newUserId,
-        email: result.emailAddress,
-        serverUrl: resolvedServerUrl,
-        encryptedPassword,
-        updatedAt: sql`CURRENT_TIMESTAMP`,
-      })
-      .onConflictDoUpdate({
-        target: users.email,
-        set: {
-          serverUrl: resolvedServerUrl,
-          encryptedPassword,
-          updatedAt: sql`CURRENT_TIMESTAMP`,
-        },
-      })
-      .returning({
-        id: users.id,
-      })
-
-    if (!dbUser) {
-      throw new Error('Failed to persist user record')
-    }
-    const userId = dbUser.id
-
-    await upsertSmarterMailSession(userId, result)
-    const appSession = await createAppSession(userId)
-    setAppSessionCookie(c, appSession.id, appSession.expiresAt)
-
-    return apiSuccess(c, {
-      username: result.username,
-      emailAddress: result.emailAddress,
-      isAdmin: result.isAdmin,
-      isDomainAdmin: result.isDomainAdmin,
-      serverUrl: resolvedServerUrl,
-      isTelegramBound: await isUserTelegramBound(userId),
-    }, 'Authentication successful')
-  } catch (error) {
-    console.error('Login error:', error)
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred during authentication'
-    return apiError(c, errorMessage, 500)
+  if (!response.ok) {
+    const error = await response.json().catch(() => null)
+    return apiError(c, error?.message || 'Authentication request failed', response.status)
   }
-})
+
+  return apiSuccess(c, includeData ? await response.json() : null, message)
+}
+
+authApp.post('/login', (c) =>
+  appAuthResponse(c, c.req.raw, 'Authentication successful', true))
 
 // GET /me
 authApp.get('/me', async (c) => {
@@ -111,14 +58,9 @@ authApp.get('/me', async (c) => {
   }
 })
 
-// POST /logout
-authApp.post('/logout', async (c) => {
-  const sessionId = getCookie(c, APP_SESSION_COOKIE)
-  if (sessionId) {
-    await db.delete(appSessions).where(eq(appSessions.id, sessionId))
-  }
-  clearAuthCookies(c)
-  return apiSuccess(c, null, 'Successfully logged out')
+authApp.post('/logout', (c) => {
+  const url = new URL('/api/auth/sign-out', c.req.url)
+  return appAuthResponse(c, new Request(url, c.req.raw), 'Successfully logged out', false)
 })
 
 // POST /telegram/bind-token

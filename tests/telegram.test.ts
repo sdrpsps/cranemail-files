@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -28,6 +29,7 @@ let onFileDownload: (() => Promise<void>) | undefined
 before(async () => {
   process.env.TURSO_DATABASE_URL = `file:${path.join(tempDir, 'telegram.db')}`
   process.env.NEXT_PUBLIC_SITE_URL = 'https://site.example'
+  process.env.BETTER_AUTH_SECRET = randomBytes(32).toString('hex')
   process.env.ENCRYPTION_KEY = 'isolated-telegram-test-key'
   database = await import('../lib/db')
   const legacyFolder = path.join(tempDir, 'legacy-migrations')

@@ -55,7 +55,9 @@ export async function initDb() {
     }
     // Selecting every mapped column also catches accidental schema drift without reading data.
     await db.select().from(schema.users).limit(0)
-    await db.select().from(schema.appSessions).limit(0)
+    await db.select().from(schema.authSessions).limit(0)
+    await db.select().from(schema.authAccounts).limit(0)
+    await db.select().from(schema.authVerifications).limit(0)
     await db.select().from(schema.smartermailSessions).limit(0)
     await db.select().from(schema.bindTokens).limit(0)
     await db.select().from(schema.uploadedFiles).limit(0)
