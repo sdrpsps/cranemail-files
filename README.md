@@ -59,6 +59,8 @@ To link several CraneMail accounts to the same bot, sign in to each account, add
 
 Use `/files`, `/list`, or **📂 My Files** to list the current account's files. Existing pagination buttons retain their original account. Uploads keep the account selected when they began, even if you switch while a file is downloading. Disconnecting a bot on the website removes only the current CraneMail account's configuration and bindings. If the selected account is disconnected, explicitly choose another in Telegram.
 
+Use `/search <filename>` to find files in the selected account by part of their name.
+
 ### Understand public links and deletion
 
 - Treat both short links and original links as public: anyone with the link can access the shared file. This app does not add passwords or expiry dates to links.
@@ -152,7 +154,7 @@ Add your BotFather token in **Telegram Bots** on the dashboard. Each bot receive
 https://files.example.com/api/telegram/webhook/<bot-id>
 ```
 
-The app uses grammY for message handling and Bot API calls. Adding a bot calls `getMe` and `setWebhook`, subscribes to messages and callback queries, and authenticates webhooks using the `X-Telegram-Bot-Api-Secret-Token` header. Completed updates are deduplicated; transient processing failures return a non-2xx response for Telegram to retry. Upload business errors are reported to the user, who can resend the file.
+The app uses grammY for message handling and Bot API calls. Connecting a bot registers its private-chat command menu. To refresh the menu for an existing bot, submit the same token again in **Telegram Bots**. The connection subscribes to messages and callback queries and authenticates webhooks using the `X-Telegram-Bot-Api-Secret-Token` header. Completed updates are deduplicated; transient processing failures return a non-2xx response for Telegram to retry. Upload business errors are reported to the user, who can resend the file.
 
 A Telegram bot has one webhook. Connecting it here replaces its previous webhook, so use a dedicated bot. Tokens are encrypted and never returned by the list API. Multiple CraneMail accounts adding the same token share the bot record and webhook, while each Telegram user can access only accounts they have linked.
 

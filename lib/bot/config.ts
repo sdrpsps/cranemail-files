@@ -45,6 +45,14 @@ export async function configureBot(userId: string, token: string) {
   const info = await api.getMe()
   if (!info.username) throw new Error('This bot does not have a username.')
 
+  await api.setMyCommands([
+    { command: 'start', description: 'Get account linking instructions' },
+    { command: 'accounts', description: 'Choose an account for uploads' },
+    { command: 'files', description: 'List files in the selected account' },
+    { command: 'search', description: 'Find files by name in the selected account' },
+    { command: 'help', description: 'Show upload and command help' },
+  ], { scope: { type: 'all_private_chats' } })
+
   const newId = crypto.randomUUID()
   const newSecret = crypto.randomBytes(32).toString('hex')
   // A Telegram bot has one identity even when several CraneMail accounts configure it.

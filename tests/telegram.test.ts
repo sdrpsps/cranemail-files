@@ -18,6 +18,7 @@ const cookies: string[] = []
 const userIds: string[] = []
 const messages: { token: string; text: string; reply_markup?: { inline_keyboard?: { text: string; callback_data: string }[][] } }[] = []
 const registrations: { token: string; url: string; secret_token: string }[] = []
+const commandMenus: { token: string; commands: { command: string; description: string }[]; scope: { type: string } }[] = []
 let botId = ''
 let secondBotId = ''
 let updateId = 1
@@ -80,6 +81,10 @@ before(async () => {
     }
     if (method === 'setWebhook') {
       registrations.push({ token, ...payload })
+      return Response.json({ ok: true, result: true })
+    }
+    if (method === 'setMyCommands') {
+      commandMenus.push({ token, ...payload })
       return Response.json({ ok: true, result: true })
     }
     if (method === 'sendMessage' || method === 'editMessageText') {
@@ -191,7 +196,7 @@ test('connecting a bot requires a valid token and a public HTTPS site origin', a
   assert.equal(registrations.length, 0)
 })
 
-test('web configuration encrypts credentials and registers a bot-specific authenticated webhook', async () => {
+test('web configuration encrypts credentials and registers the webhook and private command menu', async () => {
   const response = await request('/telegram/bots', 'POST', 0, { token: tokens[0] })
   assert.equal(response.status, 200)
   const result = await response.json()
@@ -201,6 +206,11 @@ test('web configuration encrypts credentials and registers a bot-specific authen
   assert.equal(decrypt(bot.encryptedToken), tokens[0])
   assert.equal(registrations[0].url, `https://site.example/api/telegram/webhook/${botId}`)
   assert.equal(registrations[0].secret_token, bot.webhookSecret)
+  assert.equal(commandMenus[0].token, tokens[0])
+  assert.deepEqual(commandMenus[0].scope, { type: 'all_private_chats' })
+  assert.deepEqual(commandMenus[0].commands.map(({ command }) => command),
+    ['start', 'accounts', 'files', 'search', 'help'])
+  assert.ok(commandMenus[0].commands.every(({ description }) => description.length > 0))
   const list = await request('/telegram/bots', 'GET', 0)
   const text = await list.text()
   assert.ok(!text.includes(tokens[0]) && !text.includes(bot.encryptedToken) && !text.includes(bot.webhookSecret))
@@ -212,14 +222,24 @@ test('bots are private to accounts that supplied their token', async () => {
   assert.equal((await request(`/telegram/bots/${botId}`, 'DELETE', 2)).status, 404)
 })
 
-test('adding the same bot from a second account reuses its identity and webhook secret', async () => {
+test('adding the same bot again refreshes its command menu and reuses its identity and webhook secret', async () => {
   const response = await request('/telegram/bots', 'POST', 1, { token: tokens[0] })
   assert.equal((await response.json()).data.id, botId)
   assert.equal(registrations[0].secret_token, registrations[1].secret_token)
+  assert.deepEqual(commandMenus[1], commandMenus[0])
   assert.equal((await database.db.select().from(database.telegramBots)).length, 1)
   const response2 = await request('/telegram/bots', 'POST', 0, { token: tokens[1] })
   secondBotId = (await response2.json()).data.id
   assert.notEqual(botId, secondBotId)
+})
+
+test('the help command explains uploads and account commands', async () => {
+  const beforeCount = messages.length
+  assert.equal((await webhook(message('/help'))).status, 200)
+  assert.equal(messages.length, beforeCount + 1)
+  assert.match(messages.at(-1)!.text, /Send a photo or document to upload\./)
+  assert.match(messages.at(-1)!.text, /\/accounts/)
+  assert.match(messages.at(-1)!.text, /\/search filename/)
 })
 
 test('webhooks reject missing, forged, and non-ASCII secrets before processing', async () => {
@@ -238,12 +258,49 @@ test('binding tokens are password-protected, bot-specific, single use, and expir
   assert.match(messages.at(-1)!.text, /another bot/)
   assert.equal((await webhook(message(`/start ${binding.token}`))).status, 200)
   assert.equal((await currentAccount())?.id, userIds[0])
+  const replay = message(`/start ${binding.token}`)
+  const beforeReplay = messages.length
+  assert.equal((await webhook(replay)).status, 200)
+  assert.match(messages.at(-1)!.text, /This binding link has expired\./)
+  assert.equal((await webhook(replay)).status, 200)
+  assert.equal(messages.length, beforeReplay + 1)
+  assert.equal((await currentAccount())?.id, userIds[0])
   assert.equal((await webhook(message(`/start ${binding.token}`, 99))).status, 200)
+  assert.match(messages.at(-1)!.text, /This binding link has expired\./)
   assert.equal(await currentAccount(botId, 99), undefined)
   const expired = await bindToken(0)
   await database.db.update(database.bindTokens).set({ expiresAt: '2000-01-01T00:00:00.000Z' }).where(eq(database.bindTokens.token, expired.token))
   await webhook(message(`/start ${expired.token}`, 99))
+  assert.match(messages.at(-1)!.text, /Binding Failed/)
   assert.equal(await currentAccount(botId, 99), undefined)
+})
+
+test('a plain start and a binding start can be handled together', async () => {
+  const binding = await bindToken(0)
+  const beforeCount = messages.length
+  const responses = await Promise.all([
+    webhook(message(`/start ${binding.token}`, 77)),
+    webhook(message('/start', 77)),
+  ])
+  assert.deepEqual(responses.map((response) => response.status), [200, 200])
+  assert.equal((await currentAccount(botId, 77))?.id, userIds[0])
+  const replies = messages.slice(beforeCount).map((reply) => reply.text)
+  assert.equal(replies.length, 2)
+  assert.equal(replies.filter((reply) => reply.includes('Account linked')).length, 1)
+  assert.equal(replies.filter((reply) => reply.includes('CraneMail Files')).length, 1)
+})
+
+test('a binding confirmation can be retried after a Telegram send failure', async () => {
+  const binding = await bindToken(0)
+  const update = message(`/start ${binding.token}`, 78)
+  const beforeCount = messages.length
+  networkFailure = true
+  assert.equal((await webhook(update)).status, 500)
+  assert.equal((await currentAccount(botId, 78))?.id, userIds[0])
+  assert.equal((await webhook(update)).status, 200)
+  assert.equal((await webhook(update)).status, 200)
+  assert.equal(messages.length, beforeCount + 1)
+  assert.match(messages.at(-1)!.text, /Account linked/)
 })
 
 test('adding a second CraneMail account keeps the first binding and upload selection', async () => {
@@ -266,6 +323,24 @@ test('account selection cannot access another Telegram user or bot bindings', as
   assert.equal((await currentAccount())?.id, userIds[0])
   await webhook(callback(`account:${userIds[1]}`))
   assert.equal((await currentAccount())?.id, userIds[1])
+})
+
+test('file search matches literal filename fragments in the selected account', async () => {
+  await database.db.insert(database.uploadedFiles).values([
+    { id: 'search-match', email: emails[1], fileName: 'Board %_ <draft>.pdf', shortCode: 'search1', publicLink: '/d/match' },
+    { id: 'search-decoy', email: emails[1], fileName: 'Board 24 draft.pdf', publicLink: '/d/decoy' },
+    { id: 'search-other', email: emails[0], fileName: 'Board %_ other.pdf', publicLink: '/d/other' },
+  ])
+  assert.equal((await webhook(message('/search'))).status, 200)
+  assert.match(messages.at(-1)!.text, /\/search filename/)
+  assert.equal((await webhook(message('/search@first_bot  bOARD %_  '))).status, 200)
+  const result = messages.at(-1)!.text
+  assert.match(result, /<a href="https:\/\/site\.example\/s\/search1">Board %_ &lt;draft&gt;\.pdf<\/a>/)
+  assert.doesNotMatch(result, /Board 24|other\.pdf/)
+  assert.equal((await webhook(message('/search nonexistent'))).status, 200)
+  assert.match(messages.at(-1)!.text, /No matching files/)
+  assert.equal((await webhook(message('/search board', 99))).status, 200)
+  assert.match(messages.at(-1)!.text, /No accounts linked/)
 })
 
 test('group chats cannot consume account binding tokens', async () => {

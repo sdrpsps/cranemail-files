@@ -16,6 +16,8 @@ export const bindTokens = sqliteTable('bind_tokens', {
   botId: text('botId').notNull(),
   expiresAt: text('expiresAt'),
   createdAt: text('createdAt').default(sql`(CURRENT_TIMESTAMP)`),
+  redeemedTelegramUserId: text('redeemedTelegramUserId'),
+  redeemedUpdateId: integer('redeemedUpdateId'),
 })
 
 // Bot credentials are separate from the accounts that have configured or linked them.

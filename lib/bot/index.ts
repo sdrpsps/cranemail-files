@@ -2,7 +2,7 @@ import { Bot } from 'grammy'
 import type { Update } from 'grammy/types'
 import { ensureDbInitialized } from '../db'
 import { handleStartCommand } from './bind'
-import { getRequestedFilesPage, renderFilesList } from './files'
+import { getRequestedFilesPage, renderFileSearch, renderFilesList } from './files'
 import { getBotRuntime, telegramClientOptions } from './runtime'
 import {
   botMainMenu, escapeTelegramHtml, sendTelegramMessage,
@@ -42,6 +42,27 @@ async function showFiles(chatId: number, fromId: number, text: string) {
   await sendTelegramMessage(chatId, list.text, list.replyMarkup)
 }
 
+async function searchFiles(chatId: number, fromId: number, query: string) {
+  if (!query) {
+    await sendTelegramMessage(chatId, 'Send <code>/search filename</code> using any part of the filename.', botMainMenu)
+    return
+  }
+  const user = await getTelegramBoundUser(fromId)
+  if (!user) return showAccounts(chatId, fromId)
+
+  await sendTelegramMessage(chatId, await renderFileSearch(user, query), botMainMenu)
+}
+
+async function showHelp(chatId: number) {
+  await sendTelegramMessage(chatId, [
+    'Send a photo or document to upload.',
+    '/files — list files in the current account',
+    '/search filename — find files by name',
+    '/accounts — switch upload account',
+    '/start — linking instructions',
+  ].join('\n'), botMainMenu)
+}
+
 export async function handleTelegramUpdate(update: TelegramUpdate) {
   await ensureDbInitialized()
   const runtime = getBotRuntime()
@@ -57,9 +78,11 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
     }
     await next()
   })
-  bot.command('start', (ctx) => handleStartCommand(ctx.chat.id, ctx.from!.id, ctx.msg.text))
+  bot.command('start', (ctx) => handleStartCommand(ctx.chat.id, ctx.from!.id, ctx.msg.text, ctx.update.update_id))
   bot.command('accounts', (ctx) => showAccounts(ctx.chat.id, ctx.from!.id))
   bot.command(['files', 'list'], (ctx) => showFiles(ctx.chat.id, ctx.from!.id, ctx.msg.text))
+  bot.command('search', (ctx) => searchFiles(ctx.chat.id, ctx.from!.id, ctx.match.trim()))
+  bot.command('help', (ctx) => showHelp(ctx.chat.id))
   bot.callbackQuery(/^account:(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery()
     const account = await selectTelegramAccount(ctx.from.id, ctx.match[1])
@@ -91,8 +114,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
     const text = ctx.message.text || ''
     if (text.includes('Accounts')) await showAccounts(ctx.chat.id, ctx.from.id)
     else if (text.includes('My Files')) await showFiles(ctx.chat.id, ctx.from.id, text)
-    else await sendTelegramMessage(ctx.chat.id,
-      'Send a photo or document to upload.\n/accounts — switch upload account\n/files — list files in the current account\n/start — linking instructions', botMainMenu)
+    else await showHelp(ctx.chat.id)
   })
   if (!runtime.info) await bot.init()
   await bot.handleUpdate(update as Update)

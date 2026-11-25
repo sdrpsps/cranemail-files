@@ -1,5 +1,5 @@
-import { count, desc, eq } from 'drizzle-orm'
-import { db, uploadedFiles } from '../db'
+import { and, count, desc, eq, sql } from 'drizzle-orm'
+import { db, uploadedFiles, type UploadedFileRecord } from '../db'
 import { getPublicUrl } from '../format'
 import { buildShortUrl } from '../shortlink'
 import { botMainMenu, escapeTelegramHtml } from './telegram-api'
@@ -11,6 +11,10 @@ function getSourceIcon(source?: string | null) {
   if (source === 'telegram') return '🤖'
   if (source === 'workspace') return '💼'
   return '💻'
+}
+
+function getFileUrl(file: Pick<UploadedFileRecord, 'shortCode' | 'publicLink'>, user: UserRow) {
+  return file.shortCode ? buildShortUrl(file.shortCode) : getPublicUrl(file.publicLink || '', user.serverUrl)
 }
 
 export function getRequestedFilesPage(text: string) {
@@ -51,11 +55,7 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
     const dateStr = file.createdAt ? new Date(file.createdAt).toLocaleString('zh-CN', { timeZone: process.env.TIMEZONE || 'Asia/Shanghai' }) : 'Unknown'
     const sizeMb = ((file.size || 0) / (1024 * 1024)).toFixed(2)
     const sourceIcon = getSourceIcon(file.source)
-    const publicLink = file.publicLink || ''
-    const publicUrl = file.shortCode
-      ? buildShortUrl(file.shortCode)
-      : getPublicUrl(publicLink, user.serverUrl)
-    const escapedUrl = escapeTelegramHtml(publicUrl)
+    const escapedUrl = escapeTelegramHtml(getFileUrl(file, user))
     responseText += `${offset + index + 1}. <b>${escapeTelegramHtml(file.fileName || 'Untitled')}</b> (${sizeMb} MB) ${sourceIcon}\n`
     responseText += `🔗 <a href="${escapedUrl}">${escapedUrl}</a>\n`
     responseText += `📅 <i>${dateStr}</i>\n\n`
@@ -73,4 +73,29 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
     text: responseText,
     replyMarkup: buttons.length > 0 ? { inline_keyboard: [buttons] } : botMainMenu,
   }
+}
+
+export async function renderFileSearch(user: UserRow, query: string) {
+  const matches = await db
+    .select({ fileName: uploadedFiles.fileName, publicLink: uploadedFiles.publicLink, shortCode: uploadedFiles.shortCode })
+    .from(uploadedFiles)
+    .where(and(
+      eq(uploadedFiles.email, user.email),
+      sql`instr(lower(${uploadedFiles.fileName}), lower(${query})) > 0`,
+    ))
+    .orderBy(desc(uploadedFiles.createdAt), desc(uploadedFiles.id))
+    .limit(BOT_FILES_PER_PAGE + 1)
+
+  const account = `👤 <code>${escapeTelegramHtml(user.email)}</code>`
+  if (!matches.length) return `${account}\n🔎 No matching files. Try a different part of the filename.`
+
+  const lines = matches.slice(0, BOT_FILES_PER_PAGE).map((file) => {
+    const name = escapeTelegramHtml(file.fileName || 'Untitled')
+    const url = getFileUrl(file, user)
+    return url ? `• <a href="${escapeTelegramHtml(url)}">${name}</a>` : `• ${name}`
+  })
+  if (matches.length > BOT_FILES_PER_PAGE) {
+    lines.push('', `Showing the ${BOT_FILES_PER_PAGE} most recent matches. Use a more specific filename to narrow the results.`)
+  }
+  return [account, '🔎 <b>Matching files</b>', '', ...lines].join('\n')
 }

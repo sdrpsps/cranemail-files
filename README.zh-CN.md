@@ -59,6 +59,8 @@ CraneMail Files 把你的 CraneMail workspace 存储变成一个方便查找和�
 
 发送 `/files`、`/list` 或点击 **📂 My Files** 查看当前账号的文件。文件列表分页始终属于生成该列表的账号。上传开始后，目标账号就会固定，期间切换账号只影响之后的操作。网页中的断开按钮只移除当前 CraneMail 账号与该机器人的配置和绑定，不影响其他账号；当前上传账号被移除后，需要在 Telegram 重新选择。
 
+发送 `/search <文件名>` 可按部分文件名搜索当前账号的文件。
+
 ### 公开链接与删除操作
 
 - 短链接和原始链接都属于公开链接，任何获得链接的人都可以访问文件。本应用没有给链接增加密码或有效期。
@@ -152,7 +154,7 @@ Vercel 上不要使用 `local.db` 回退存储。生产和预览环境应使用�
 https://files.example.com/api/telegram/webhook/<bot-id>
 ```
 
-应用使用 grammY 处理消息和 Bot API 调用。添加机器人时会自动调用 `getMe` 和 `setWebhook`，只订阅消息与按钮回调，并校验 Telegram 的 `X-Telegram-Bot-Api-Secret-Token` 请求头。已处理的更新会去重；未处理完成的临时错误会返回非 2xx 状态供 Telegram 重试。上传业务失败会向用户提示，用户可重新发送文件。
+应用使用 grammY 处理消息和 Bot API 调用。连接机器人时会注册私聊命令菜单。已连接的机器人可在 **Telegram Bots** 中再次提交同一个 token 来刷新菜单。应用只订阅消息与按钮回调，并校验 Telegram 的 `X-Telegram-Bot-Api-Secret-Token` 请求头。已处理的更新会去重；未处理完成的临时错误会返回非 2xx 状态供 Telegram 重试。上传业务失败会向用户提示，用户可重新发送文件。
 
 一个 Telegram 机器人只有一个 webhook。连接到本站会替换该机器人原来的 webhook，请使用专门用于本站的机器人。token 不会在查询接口中返回。多个 CraneMail 账号配置同一个 token 时会共用同一机器人记录和 webhook，但每个 Telegram 用户只能查看和选择自己已绑定的账号。
 
