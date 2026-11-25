@@ -39,12 +39,12 @@ export async function handleFileUpload(chatId: number, fromId: number, fileId: s
     if (!user) {
       await sendTelegramMessage(
         chatId,
-        '❌ <b>Upload Blocked:</b>\nYour Telegram account is not bound to a CraneMail account. Please sign in to the website and click <b>"Link Telegram Bot"</b> first.'
+        '❌ <b>Upload Blocked:</b>\nLink a CraneMail account on the website, then use /accounts to select the upload account.'
       )
       return
     }
 
-    await sendTelegramMessage(chatId, '⚡ <i>Uploading to CraneMail Cloud Storage...</i>')
+    await sendTelegramMessage(chatId, `⚡ Uploading to <code>${escapeTelegramHtml(user.email)}</code>…`)
 
     const { client, accessToken, user: sessionUser } = await getSmarterMailAuthForUser(user.id)
     const filePath = await getTelegramFilePath(fileId)
@@ -83,6 +83,7 @@ export async function handleFileUpload(chatId: number, fromId: number, fileId: s
     await sendTelegramMessage(
       chatId,
       `✅ <b>File Uploaded Successfully!</b>\n\n` +
+      `<b>Account:</b> <code>${escapeTelegramHtml(user.email)}</code>\n` +
       `<b>Name:</b> <code>${escapeTelegramHtml(fileName)}</code>\n` +
       `<b>Link:</b> <code>${escapeTelegramHtml(buildShortUrl(shortCode))}</code>\n` +
       `<b>Original link:</b> <code>${escapeTelegramHtml(publicUrl)}</code>`,
@@ -93,7 +94,7 @@ export async function handleFileUpload(chatId: number, fromId: number, fileId: s
     const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred during upload.'
     await sendTelegramMessage(
       chatId,
-      `❌ <b>Upload Failed:</b>\n${errorMessage}`,
+      `❌ <b>Upload Failed:</b>\n${escapeTelegramHtml(errorMessage)}`,
       botMainMenu
     )
   }

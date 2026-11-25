@@ -5,6 +5,8 @@ import { getCookie } from 'hono/cookie'
 import { apiSuccess, apiError } from '@/lib/response'
 import { SmarterMailClient } from '@/lib/smartermail'
 import { encrypt } from '@/lib/crypto'
+import { findBotRuntime, hasBotAccess } from '@/lib/bot/config'
+import { isUserTelegramBound } from '@/lib/bot/users'
 import { appSessions, bindTokens, db, users } from '@/lib/db'
 import {
   resolveServerUrl,
@@ -60,7 +62,6 @@ authApp.post('/login', async (c) => {
       })
       .returning({
         id: users.id,
-        telegramUserId: users.telegramUserId,
       })
 
     if (!dbUser) {
@@ -78,7 +79,7 @@ authApp.post('/login', async (c) => {
       isAdmin: result.isAdmin,
       isDomainAdmin: result.isDomainAdmin,
       serverUrl: resolvedServerUrl,
-      isTelegramBound: !!dbUser.telegramUserId,
+      isTelegramBound: await isUserTelegramBound(userId),
     }, 'Authentication successful')
   } catch (error) {
     console.error('Login error:', error)
@@ -107,7 +108,7 @@ authApp.get('/me', async (c) => {
       username,
       emailAddress,
       serverUrl: user.serverUrl,
-      isTelegramBound: !!user.telegramUserId,
+      isTelegramBound: await isUserTelegramBound(user.id),
     }, 'Current user retrieved successfully')
   } catch (err) {
     console.error('getUserSettings in me failed:', err)
@@ -133,7 +134,7 @@ authApp.post('/logout', async (c) => {
 // POST /telegram/bind-token
 authApp.post('/telegram/bind-token', async (c) => {
   try {
-    const { password } = await c.req.json()
+    const { password, botId } = await c.req.json()
     if (!password) {
       return apiError(c, 'Password is required to confirm and link your Telegram account', 400)
     }
@@ -146,6 +147,12 @@ authApp.post('/telegram/bind-token', async (c) => {
       }
       return { email: userData.emailAddress, serverUrl: user.serverUrl, userId: user.id }
     })
+
+    if (typeof botId !== 'string' || !await hasBotAccess(botId, userId)) {
+      return apiError(c, 'Select a bot configured for this account.', 403)
+    }
+    const runtime = await findBotRuntime(botId)
+    if (!runtime) return apiError(c, 'Bot is not configured.', 400)
 
     const client = new SmarterMailClient(serverUrl)
 
@@ -174,10 +181,12 @@ authApp.post('/telegram/bind-token', async (c) => {
     await db.insert(bindTokens).values({
       token,
       userId,
+      botId,
       expiresAt,
     })
 
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'CraneMailFilesBot'
+    const botUsername = runtime.info?.username
+    if (!botUsername) throw new Error('Bot username is not available.')
     const bindUrl = `https://t.me/${botUsername}?start=${token}`
 
     return apiSuccess(c, { token, bindUrl }, 'Binding link generated successfully')

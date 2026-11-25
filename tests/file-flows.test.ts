@@ -9,6 +9,7 @@ import type { SmarterMailFileItem } from '../lib/smartermail'
 
 const tempDir = mkdtempSync(path.join(tmpdir(), 'cranemail-flows-'))
 const email = 'uploader@example.com'
+const botToken = 'file-flow-test-token'
 let database: typeof import('../lib/db')
 let api: typeof import('../app/api/[[...route]]/route')
 let shortlinks: typeof import('../lib/shortlink')
@@ -22,7 +23,6 @@ before(async () => {
   process.env.TURSO_DATABASE_URL = `file:${path.join(tempDir, 'flows.db')}`
   process.env.NEXT_PUBLIC_SITE_URL = 'https://site.example'
   process.env.ENCRYPTION_KEY = 'isolated-test-key'
-  process.env.TELEGRAM_BOT_TOKEN = 'test-token'
   database = await import('../lib/db')
   await migrate(database.db, { migrationsFolder: './drizzle' })
   shortlinks = await import('../lib/shortlink')
@@ -55,10 +55,10 @@ before(async () => {
       telegramMessages.push(JSON.parse(String(init?.body)).text)
       return Response.json({ ok: true })
     }
-    if (url.includes('/getFile?')) {
+    if (url.endsWith('/getFile')) {
       return Response.json({ ok: true, result: { file_path: 'documents/photo.png' } })
     }
-    if (url.includes(`/file/bot${process.env.TELEGRAM_BOT_TOKEN}/`)) return new Response('test-file-bytes')
+    if (url.includes(`/file/bot${botToken}/`)) return new Response('test-file-bytes')
     throw new Error(`Unexpected network request in isolated test: ${url}`)
   })
 
@@ -148,10 +148,14 @@ test('sync recognizes normalized absolute links when the remote file ID changes'
 })
 
 test('Telegram uploads store a code and show short plus original URLs', async () => {
-  await database.db.update(database.users).set({ telegramUserId: '42' })
-    .where(eq(database.users.email, email))
+  const [user] = await database.db.select().from(database.users).where(eq(database.users.email, email))
+  await database.db.insert(database.telegramBindings).values({
+    botId: 'file-flow-bot', telegramUserId: '42', userId: user.id,
+  })
   const { handleFileUpload } = await import('../lib/bot/upload')
-  await handleFileUpload(42, 42, 'telegram-file', 'bot-photo.png')
+  const { withBotRuntime } = await import('../lib/bot/runtime')
+  await withBotRuntime({ id: 'file-flow-bot', token: botToken },
+    () => handleFileUpload(42, 42, 'telegram-file', 'bot-photo.png'))
   const [file] = await database.db.select().from(database.uploadedFiles)
     .where(eq(database.uploadedFiles.source, 'telegram'))
   assert.ok(file?.shortCode && shortlinks.isValidShortCode(file.shortCode))

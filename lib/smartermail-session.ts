@@ -14,7 +14,6 @@ export interface AppUser {
   id: string
   email: string
   serverUrl: string
-  telegramUserId: string | null
   encryptedPassword: string | null
 }
 
@@ -49,7 +48,6 @@ export async function getUserById(userId: string): Promise<AppUser | null> {
       id: users.id,
       email: users.email,
       serverUrl: users.serverUrl,
-      telegramUserId: users.telegramUserId,
       encryptedPassword: users.encryptedPassword,
     })
     .from(users)
@@ -64,7 +62,6 @@ export async function getUserById(userId: string): Promise<AppUser | null> {
     id: row.id,
     email: row.email,
     serverUrl: resolveServerUrl(row.serverUrl ?? undefined),
-    telegramUserId: row.telegramUserId,
     encryptedPassword: row.encryptedPassword,
   }
 }

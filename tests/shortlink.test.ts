@@ -211,7 +211,6 @@ test('Telegram lists use short links and preserve a properly joined original fal
   ])
   const result = await renderFilesList({
     id: 'bot-user', email: 'bot@example.com', serverUrl: 'https://mail.example',
-    telegramUserId: '123',
   }, 1)
   assert.ok(result.text.includes('https://site.example/s/Bot0001'))
   assert.ok(result.text.includes('https://other.example/fallback.png?a=1&amp;b=2'))

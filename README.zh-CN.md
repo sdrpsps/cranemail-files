@@ -50,14 +50,14 @@ CraneMail Files 把你的 CraneMail workspace 存储变成一个方便查找和�
 
 ### 通过 Telegram 上传
 
-如果站点部署者已经配置 bot：
+1. 在面板中打开 **Telegram Bots**，粘贴你在 BotFather 创建的机器人的 token，点击 **Connect bot**。服务端会校验机器人、加密保存 token，并自动注册带独立验证密钥的 webhook，无需配置 Bot 环境变量。
+2. 选择机器人，点击 **Link account**，输入当前 CraneMail 账号的密码，生成有效期为 10 分钟的绑定链接。
+3. 打开链接并点击 **Start**，或在该机器人的私聊中发送 `/start <token>`，然后返回网页检查绑定状态。
+4. 给机器人发送照片或文档，等待它回复目标邮箱、短链接和原始存储链接。需要保留图片原文件时，请以文档形式发送。
 
-1. 在面板中点击 **Link Telegram**。
-2. 输入 CraneMail 密码，生成绑定链接。
-3. 打开 bot 链接并点击 **Start**，或发送页面显示的 `/start <token>` 命令。绑定 token 在 10 分钟后过期。
-4. 给 bot 发送照片或文档，等待它回复短链接和原始存储链接。
+同一个机器人可以连接多个 CraneMail 账号：分别登录各个账号，添加同一个机器人的 token，再完成绑定。添加账号会保留原有绑定和当前上传账号。在 Telegram 发送 `/accounts` 或点击 **👤 Accounts**，选择后续上传和文件查询使用的账号。每个机器人、每个 Telegram 用户的选择相互独立。
 
-发送 `/files`、`/list` 或点击 **📂 My Files** 查看文件；发送 `/help` 查看帮助。需要保留图片原文件时，请以文档形式发送。
+发送 `/files`、`/list` 或点击 **📂 My Files** 查看当前账号的文件。文件列表分页始终属于生成该列表的账号。上传开始后，目标账号就会固定，期间切换账号只影响之后的操作。网页中的断开按钮只移除当前 CraneMail 账号与该机器人的配置和绑定，不影响其他账号；当前上传账号被移除后，需要在 Telegram 重新选择。
 
 ### 公开链接与删除操作
 
@@ -136,35 +136,25 @@ Vercel 上不要使用 `local.db` 回退存储。生产和预览环境应使用�
 | `ENCRYPTION_KEY` | 足够长、保密且稳定的密钥。用 `openssl rand -hex 32` 生成，并替换示例中的开发密钥。 |
 | `TURSO_DATABASE_URL` | 远程 libSQL 数据库地址；有持久磁盘的服务器可留空，使用 `local.db`。 |
 | `TURSO_AUTH_TOKEN` | 远程数据库需要的访问 token。 |
-| `TELEGRAM_BOT_TOKEN` | 可选，在 [@BotFather](https://t.me/BotFather) 创建 bot 后取得。 |
-| `TELEGRAM_BOT_USERNAME` | bot 用户名，不带 `@`，用于生成绑定链接。 |
-| `ALLOWED_TELEGRAM_USERS` | 可选，逗号分隔的 Telegram 用户 ID 或不带 `@` 的用户名。留空时，任何 Telegram 用户都可以绑定自己的 CraneMail 账号。 |
 | `SMARTERMAIL_CLIENT_ID` | 认证客户端标识，通常保留 `cranemail-files-app` 即可。 |
 
 应用会在服务端加密保存 CraneMail 密码和会话 token，用于续期登录。浏览器使用 HttpOnly 应用会话 cookie。请部署到可信服务器，妥善保管凭据，并同时备份数据库与 `ENCRYPTION_KEY`。更换密钥后，已有加密凭据无法解密，用户需要重新登录，也可能需要重新绑定 Telegram。
 
 ### 启用自己的 Telegram bot
 
-通过 [@BotFather](https://t.me/BotFather) 创建 bot，配置 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_BOT_USERNAME`，然后重新部署。接收消息的公开 HTTPS 地址为：
+先设置 `NEXT_PUBLIC_SITE_URL` 为站点的公开 HTTPS 地址，并设置稳定的 `ENCRYPTION_KEY`。升级已有部署时，先运行 `pnpm db:migrate`，再启动新版本。迁移会保留 CraneMail 账号、会话和已上传文件；旧版 Telegram 绑定和待使用链接会被移除，需要在网页添加机器人并重新绑定各个 CraneMail 账号。
+
+在网页的 **Telegram Bots** 中添加 BotFather token 即可。每个机器人的接收地址为：
 
 ```text
-https://files.example.com/api/telegram/webhook
+https://files.example.com/api/telegram/webhook/<bot-id>
 ```
 
-在终端中导出实际 bot token，再注册和检查 webhook。执行前把示例域名替换为自己的站点：
+应用使用 grammY 处理消息和 Bot API 调用。添加机器人时会自动调用 `getMe` 和 `setWebhook`，只订阅消息与按钮回调，并校验 Telegram 的 `X-Telegram-Bot-Api-Secret-Token` 请求头。已处理的更新会去重；未处理完成的临时错误会返回非 2xx 状态供 Telegram 重试。上传业务失败会向用户提示，用户可重新发送文件。
 
-```bash
-export TELEGRAM_BOT_TOKEN='your-bot-token'
-curl --fail-with-body --request POST \
-  --data-urlencode 'url=https://files.example.com/api/telegram/webhook' \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook"
-curl --fail-with-body \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
-```
+一个 Telegram 机器人只有一个 webhook。连接到本站会替换该机器人原来的 webhook，请使用专门用于本站的机器人。token 不会在查询接口中返回。多个 CraneMail 账号配置同一个 token 时会共用同一机器人记录和 webhook，但每个 Telegram 用户只能查看和选择自己已绑定的账号。
 
-检查 `result.url` 是否与部署地址一致，以及 `last_error_message` 是否报告投递问题，然后按照前面的[绑定步骤](#通过-telegram-上传)操作。
-
-本地开发 bot 可运行 `pnpm dev:bot`。**该命令会删除 bot 当前的 webhook**，改用轮询接收消息。建议使用独立的开发 bot，或在调试结束后重新注册生产环境 webhook。
+本地轮询使用 `pnpm dev:bot <bot-id>`，指定已在网页配置的机器人。不带 ID 运行 `pnpm dev:bot` 可查看已配置机器人的 ID 和用户名。轮询会删除所选机器人的 webhook，请使用专门用于开发的机器人；需要恢复 webhook 时，在网页重新连接该机器人即可。
 
 ## 常见问题
 
@@ -186,7 +176,7 @@ curl --fail-with-body \
 
 **Telegram 没反应，或者提示绑定 token 无效？**
 
-检查 bot token、允许用户列表和 `getWebhookInfo`，并在 10 分钟内使用新生成的绑定链接。网页和 webhook 必须连接同一个数据库。如果运行过 `pnpm dev:bot`，需要恢复 webhook。
+检查 bot token 和 `getWebhookInfo`，并在 10 分钟内使用新生成的绑定链接。网页和 webhook 必须连接同一个数据库。如果运行过 `pnpm dev:bot <bot-id>`，在网页重新连接对应机器人以恢复 webhook。
 
 **为什么提示 “Database is not ready”？**
 

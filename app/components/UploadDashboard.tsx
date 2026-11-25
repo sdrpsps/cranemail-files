@@ -112,7 +112,6 @@ export function UploadDashboard({
 
   const refreshBindStatus = async () => {
     await onRefreshSession()
-    setShowBindModal(false)
   }
 
   const hostName = extractHostname(user.serverUrl)
@@ -194,8 +193,8 @@ export function UploadDashboard({
                       <Send />
                       <span>
                         {user.isTelegramBound
-                          ? 'Manage Telegram Link'
-                          : 'Link Telegram Bot'}
+                          ? 'Manage Telegram Bots'
+                          : 'Connect Telegram Bot'}
                       </span>
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => void onRefreshFiles()}>
@@ -256,7 +255,7 @@ export function UploadDashboard({
                     Telegram Bot Upload
                   </CardTitle>
                   <CardDescription className="text-xs leading-relaxed">
-                    Forward photos or documents to the bot to upload directly into your CraneMail date folders.
+                    Connect your own bots. Link multiple CraneMail accounts to one bot and switch with /accounts.
                   </CardDescription>
                   <CardAction>
                     <div className="flex size-8 items-center justify-center rounded-lg border border-info/20 bg-info/10 text-info">
@@ -305,8 +304,8 @@ export function UploadDashboard({
                     <Send data-icon="inline-start" />
                     <span>
                       {user.isTelegramBound
-                        ? 'Re-link Telegram Account'
-                        : 'Link Telegram Bot'}
+                        ? 'Manage Telegram Bots'
+                        : 'Connect Telegram Bot'}
                     </span>
                   </Button>
                 </CardContent>

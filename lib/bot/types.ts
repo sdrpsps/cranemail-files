@@ -59,7 +59,6 @@ export interface UserRow {
   id: string
   email: string
   serverUrl: string
-  telegramUserId: string | null
   createdAt?: string
   updatedAt?: string
 }

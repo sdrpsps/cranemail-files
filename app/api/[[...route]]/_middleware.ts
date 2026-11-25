@@ -64,7 +64,6 @@ export async function getCurrentUser(c: Context): Promise<AppUser | null> {
       id: users.id,
       email: users.email,
       serverUrl: users.serverUrl,
-      telegramUserId: users.telegramUserId,
       encryptedPassword: users.encryptedPassword,
     })
     .from(appSessions)
@@ -86,7 +85,6 @@ export async function getCurrentUser(c: Context): Promise<AppUser | null> {
     id: row.id,
     email: row.email,
     serverUrl: resolveServerUrl(row.serverUrl ?? undefined),
-    telegramUserId: row.telegramUserId,
     encryptedPassword: row.encryptedPassword,
   }
 }

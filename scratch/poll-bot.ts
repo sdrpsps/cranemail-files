@@ -1,82 +1,62 @@
-import fs from 'fs'
-import path from 'path'
+import { config } from 'dotenv'
+import { setTimeout as delay } from 'node:timers/promises'
 
-// Load environment variables from .env.local manually before importing bot dependencies
-try {
-  const envPath = path.resolve(process.cwd(), '.env.local')
-  if (fs.existsSync(envPath)) {
-    const envFile = fs.readFileSync(envPath, 'utf8')
-    envFile.split('\n').forEach((line) => {
-      const trimmed = line.trim()
-      if (trimmed && !trimmed.startsWith('#')) {
-        const parts = trimmed.split('=')
-        if (parts.length >= 2) {
-          const key = parts[0].trim()
-          const value = parts.slice(1).join('=').trim().replace(/^['"]|['"]$/g, '')
-          process.env[key] = value
+// Load deployment settings before importing database or encryption modules.
+config({ path: '.env.local', quiet: true })
+config({ path: '.env', quiet: true })
+
+async function main() {
+  const { db, client, ensureDbInitialized, telegramBots } = await import('../lib/db')
+  try {
+    await ensureDbInitialized()
+    const botId = process.argv[2]
+    if (!botId) {
+      console.log('Usage: pnpm dev:bot <bot-id>\nConfigured bots:')
+      const bots = await db.select({ id: telegramBots.id, username: telegramBots.username }).from(telegramBots)
+      for (const bot of bots) console.log(`  ${bot.id}  @${bot.username}`)
+      return
+    }
+    const { findBotRuntime } = await import('../lib/bot/config')
+    const runtime = await findBotRuntime(botId)
+    if (!runtime) throw new Error('Bot not found. Connect it on the dashboard first.')
+    const { getTelegramApi, withBotRuntime } = await import('../lib/bot/runtime')
+    const { handleTelegramUpdate } = await import('../lib/bot')
+    const api = getTelegramApi(runtime.token)
+    const abort = new AbortController()
+    // grammY accepts native signals at runtime but types its older Node polyfill.
+    const signal = abort.signal as unknown as Parameters<typeof api.getUpdates>[1]
+    const stop = () => abort.abort()
+    process.once('SIGINT', stop)
+    process.once('SIGTERM', stop)
+    try {
+      console.log(`Polling @${runtime.info?.username}. This removes its webhook; use a dedicated development bot.`)
+      await api.deleteWebhook({}, signal)
+      let offset = 0
+      while (!abort.signal.aborted) {
+        try {
+          const updates = await api.getUpdates({ offset, timeout: 30, allowed_updates: ['message', 'callback_query'] }, signal)
+          for (const update of updates) {
+            if (abort.signal.aborted) break
+            await withBotRuntime(runtime, () => handleTelegramUpdate(update))
+            offset = update.update_id + 1
+          }
+        } catch {
+          if (abort.signal.aborted) break
+          console.error('Polling failed; retrying in one second.')
+          await delay(1000, undefined, { signal: abort.signal }).catch(() => {})
         }
       }
-    })
-    console.log('Loaded environment configuration from .env.local')
-  }
-} catch (err) {
-  console.error('Error loading .env.local manually:', err)
-}
-
-import { handleTelegramUpdate } from '../lib/bot'
-
-const token = process.env.TELEGRAM_BOT_TOKEN!
-if (!token) {
-  console.error('ERROR: TELEGRAM_BOT_TOKEN is not set in environment or .env.local')
-  process.exit(1)
-}
-
-let offset = 0
-
-async function poll() {
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&timeout=30`)
-    const data = await res.json()
-    
-    if (data.ok && data.result) {
-      for (const update of data.result) {
-        offset = update.update_id + 1
-        console.log(`[Telegram Bot] Processing update_id: ${update.update_id}`)
-        await handleTelegramUpdate(update)
-      }
-    } else if (!data.ok) {
-      console.error('[Telegram Bot] getUpdates API Error:', data.description)
+    } finally {
+      process.removeListener('SIGINT', stop)
+      process.removeListener('SIGTERM', stop)
     }
-  } catch (err) {
-    console.error('[Telegram Bot] Connection error in polling loop:', err)
+  } finally {
+    client.close()
   }
-  
-  // Re-poll after a brief delay
-  setTimeout(poll, 500)
 }
 
-async function start() {
-  console.log('----------------------------------------------------')
-  console.log('Starting local Telegram Bot polling loop...')
-  console.log(`Using Bot Token: ${token.substring(0, 8)}...${token.substring(token.length - 4)}`)
-  console.log('Send files or /start commands in Telegram to test.')
-  console.log('Press Ctrl+C to exit.')
-  console.log('----------------------------------------------------')
-
-  try {
-    console.log('[Telegram Bot] Deleting active webhook to enable polling...')
-    const res = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`)
-    const data = await res.json()
-    if (data.ok) {
-      console.log('[Telegram Bot] Webhook deleted successfully.')
-    } else {
-      console.warn('[Telegram Bot] Failed to delete webhook:', data.description)
-    }
-  } catch (err) {
-    console.error('[Telegram Bot] Error deleting webhook:', err)
-  }
-
-  poll()
-}
-
-start()
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error && error.message.startsWith('Database is not ready')
+    ? error.message : 'Could not start polling. Check the bot ID, database configuration, and encryption key.')
+  process.exitCode = 1
+})

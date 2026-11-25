@@ -10,6 +10,13 @@ export interface BindData {
   bindUrl: string
 }
 
+export interface TelegramBotConfig {
+  id: string
+  username: string
+  firstName: string
+  telegramUserIds: string[]
+}
+
 export interface UploadedFile {
   id: string
   fileName: string

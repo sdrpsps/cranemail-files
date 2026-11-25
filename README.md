@@ -50,14 +50,14 @@ Search and source filters help you find files uploaded from the web, Telegram, o
 
 ### Upload with Telegram
 
-If the site operator has configured a bot:
+1. Open **Telegram Bots** on the dashboard. Paste a bot token from BotFather and choose **Connect bot**. The server validates the bot, encrypts the token, and registers a webhook with a unique secret. All bots are configured on the dashboard.
+2. Choose **Link account** for that bot and verify the current CraneMail account password to generate a 10-minute binding link.
+3. Open the link and press **Start**, or send `/start <token>` in the bot's private chat. Return to the website to check the binding status.
+4. Send a photo or document. The bot replies with the destination email, short link, and original storage link. Send images as documents to preserve the original file.
 
-1. Choose **Link Telegram** on the dashboard.
-2. Enter your CraneMail password to generate a binding link.
-3. Open the bot link and press **Start**, or send the displayed `/start <token>` command. The token expires after 10 minutes.
-4. Send a photo or document. The bot replies with a short link and the original storage link.
+To link several CraneMail accounts to the same bot, sign in to each account, add the same bot token, and complete linking. Adding an account preserves existing bindings and the current upload destination. Use `/accounts` or **👤 Accounts** in Telegram to choose the account for subsequent uploads and file lists. Selections are isolated by bot and Telegram user.
 
-Use `/files`, `/list`, or **📂 My Files** to browse your files; use `/help` for help. Send an image as a document when you want to preserve the original file.
+Use `/files`, `/list`, or **📂 My Files** to list the current account's files. Existing pagination buttons retain their original account. Uploads keep the account selected when they began, even if you switch while a file is downloading. Disconnecting a bot on the website removes only the current CraneMail account's configuration and bindings. If the selected account is disconnected, explicitly choose another in Telegram.
 
 ### Understand public links and deletion
 
@@ -136,35 +136,25 @@ For upload-size and execution limits, check your [hosting plan's limits](https:/
 | `ENCRYPTION_KEY` | A long, private, stable value. Generate one with `openssl rand -hex 32`; replace the example development key. |
 | `TURSO_DATABASE_URL` | Remote libSQL URL, or leave empty to use `local.db` on a persistent server. |
 | `TURSO_AUTH_TOKEN` | Access token for the remote database, when required. |
-| `TELEGRAM_BOT_TOKEN` | Optional bot token from [@BotFather](https://t.me/BotFather). |
-| `TELEGRAM_BOT_USERNAME` | Your bot's username without `@`; used to create binding links. |
-| `ALLOWED_TELEGRAM_USERS` | Optional comma-separated Telegram user IDs or usernames without `@`. Empty allows any Telegram user to bind their own CraneMail account. |
 | `SMARTERMAIL_CLIENT_ID` | Authentication client identifier; normally keep `cranemail-files-app`. |
 
 The app stores encrypted CraneMail passwords and session tokens on the server so it can renew sessions. The browser uses an HttpOnly app session cookie. Deploy only on a server you trust, keep credentials private, and back up the database together with `ENCRYPTION_KEY`. Changing that key makes existing encrypted credentials unreadable; users will need to sign in again and may need to relink Telegram.
 
 ### Enable your Telegram bot
 
-Create a bot through [@BotFather](https://t.me/BotFather), configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME`, and redeploy. Your public HTTPS endpoint is:
+Set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin and keep a stable `ENCRYPTION_KEY`. When upgrading, run `pnpm db:migrate` before starting the new version. The migration preserves CraneMail accounts, sessions, and uploaded files. Previous Telegram bindings and pending binding links are removed; add your bot on the dashboard and link each CraneMail account again.
+
+Add your BotFather token in **Telegram Bots** on the dashboard. Each bot receives updates at:
 
 ```text
-https://files.example.com/api/telegram/webhook
+https://files.example.com/api/telegram/webhook/<bot-id>
 ```
 
-Export your actual bot token in the terminal, then register and verify the webhook. Replace the example domain with your deployment:
+The app uses grammY for message handling and Bot API calls. Adding a bot calls `getMe` and `setWebhook`, subscribes to messages and callback queries, and authenticates webhooks using the `X-Telegram-Bot-Api-Secret-Token` header. Completed updates are deduplicated; transient processing failures return a non-2xx response for Telegram to retry. Upload business errors are reported to the user, who can resend the file.
 
-```bash
-export TELEGRAM_BOT_TOKEN='your-bot-token'
-curl --fail-with-body --request POST \
-  --data-urlencode 'url=https://files.example.com/api/telegram/webhook' \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook"
-curl --fail-with-body \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
-```
+A Telegram bot has one webhook. Connecting it here replaces its previous webhook, so use a dedicated bot. Tokens are encrypted and never returned by the list API. Multiple CraneMail accounts adding the same token share the bot record and webhook, while each Telegram user can access only accounts they have linked.
 
-Check that `result.url` matches your deployment and that `last_error_message` does not report a delivery problem. Then follow the [binding steps](#upload-with-telegram).
-
-For local bot development, use `pnpm dev:bot`. **This deletes the bot's active webhook** to enable polling, so use a separate development bot or register the production webhook again afterward.
+For local polling, run `pnpm dev:bot <bot-id>` using a bot configured on the dashboard. Run `pnpm dev:bot` without an ID to list configured bot IDs and usernames. Polling deletes the selected bot's webhook, so use a dedicated development bot. Reconnect the bot on the dashboard to register its webhook again.
 
 ## Common questions
 
@@ -186,7 +176,7 @@ Try a small file first. Check your CraneMail storage quota and sharing permissio
 
 **Why does Telegram not respond, or reject a binding token?**
 
-Check the bot token, allowed-user list, and `getWebhookInfo`. Generate a fresh binding link within its 10-minute window. The web app and webhook must use the same database. If you ran `pnpm dev:bot`, restore the webhook.
+Check the bot token and `getWebhookInfo`. Generate a fresh binding link within its 10-minute window. The web app and webhook must use the same database. If you ran `pnpm dev:bot <bot-id>`, reconnect that bot on the dashboard to restore its webhook.
 
 **Why does the app say “Database is not ready”?**
 

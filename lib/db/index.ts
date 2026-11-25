@@ -59,6 +59,11 @@ export async function initDb() {
     await db.select().from(schema.smartermailSessions).limit(0)
     await db.select().from(schema.bindTokens).limit(0)
     await db.select().from(schema.uploadedFiles).limit(0)
+    await db.select().from(schema.telegramBots).limit(0)
+    await db.select().from(schema.telegramBotAccounts).limit(0)
+    await db.select().from(schema.telegramBindings).limit(0)
+    await db.select().from(schema.telegramSelections).limit(0)
+    await db.select().from(schema.telegramUpdates).limit(0)
   } catch (cause) {
     throw new Error(
       'Database is not ready. Run pnpm db:migrate before deployment.',

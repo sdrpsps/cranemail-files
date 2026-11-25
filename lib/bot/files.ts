@@ -30,7 +30,7 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
 
   if (total === 0) {
     return {
-      text: '📂 <b>No uploaded files found.</b>\nSend me a file to start uploading!',
+      text: `👤 <code>${escapeTelegramHtml(user.email)}</code>\n📂 <b>No uploaded files found.</b>\nSend me a file to start uploading!`,
       replyMarkup: botMainMenu,
     }
   }
@@ -46,7 +46,7 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
     .limit(BOT_FILES_PER_PAGE)
     .offset(offset)
 
-  let responseText = `📂 <b>Your Uploaded Files</b> (${page}/${pageCount}, ${total} total)\n\n`
+  let responseText = `👤 <code>${escapeTelegramHtml(user.email)}</code>\n📂 <b>Your Uploaded Files</b> (${page}/${pageCount}, ${total} total)\n\n`
   files.forEach((file, index) => {
     const dateStr = file.createdAt ? new Date(file.createdAt).toLocaleString('zh-CN', { timeZone: process.env.TIMEZONE || 'Asia/Shanghai' }) : 'Unknown'
     const sizeMb = ((file.size || 0) / (1024 * 1024)).toFixed(2)
@@ -63,10 +63,10 @@ export async function renderFilesList(user: UserRow, requestedPage: number) {
 
   const buttons = []
   if (page > 1) {
-    buttons.push({ text: '⬅️ Previous', callback_data: `files:${page - 1}` })
+    buttons.push({ text: '⬅️ Previous', callback_data: `files:${user.id}:${page - 1}` })
   }
   if (page < pageCount) {
-    buttons.push({ text: 'Next ➡️', callback_data: `files:${page + 1}` })
+    buttons.push({ text: 'Next ➡️', callback_data: `files:${user.id}:${page + 1}` })
   }
 
   return {
