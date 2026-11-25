@@ -70,7 +70,7 @@ before(async () => {
     const match = url.match(/^https:\/\/api\.telegram\.org\/bot([^/]+)\/(\w+)$/)
     assert.ok(match, `Unexpected test request: ${url}`)
     const [, token, method] = match
-    const payload = JSON.parse(String(init?.body || '{}'))
+    const payload = await new Request(input, init).json()
     if (method === 'getMe') {
       assert.ok(tokens.includes(token))
       return Response.json({ ok: true, result: {

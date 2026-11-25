@@ -21,8 +21,22 @@ export function withBotRuntime<T>(runtime: BotRuntime, operation: () => T): T {
   return runtimeStorage.run(runtime, operation)
 }
 
+type TelegramFetchInit = Omit<RequestInit, 'signal'> & {
+  signal?: Pick<AbortSignal, 'aborted' | 'addEventListener'> | null
+}
+
 export const telegramClientOptions = {
-  fetch: ((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)) as typeof fetch,
+  fetch: ((input: Parameters<typeof fetch>[0], init?: TelegramFetchInit) => {
+    const { signal, ...options } = init ?? {}
+    if (signal == null || signal instanceof AbortSignal) {
+      return globalThis.fetch(input, { ...options, signal })
+    }
+
+    const controller = new AbortController()
+    if (signal.aborted) controller.abort()
+    else signal.addEventListener('abort', () => controller.abort(), { once: true })
+    return globalThis.fetch(input, { ...options, signal: controller.signal })
+  }) as typeof fetch,
 }
 
 export function getTelegramApi(token = getBotRuntime().token) {
