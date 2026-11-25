@@ -7,21 +7,15 @@ import { db, uploadedFiles } from '@/lib/db'
 import { getPublicUrl } from '@/lib/format'
 import { assignShortCode, buildShortUrl, insertFileWithShortCode } from '@/lib/shortlink'
 import nodeCrypto from 'crypto'
-import { callSmarterMail } from '../_middleware'
+import { callSmarterMail, requireCurrentUser } from '../_middleware'
 
 const filesApp = new Hono()
 
 // GET /
 filesApp.get('/', async (c) => {
+  c.header('Cache-Control', 'no-store')
   try {
-    const email = await callSmarterMail(c, async ({ client, accessToken, user }) => {
-      const userSettings = await client.getUserSettings(accessToken)
-      const userData = userSettings?.userData
-      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
-      }
-      return userData.emailAddress || user.email
-    })
+    const { email } = await requireCurrentUser(c)
 
     const files = await db
       .select()
@@ -51,50 +45,39 @@ filesApp.delete('/:id', async (c) => {
       return apiError(c, 'File ID is required', 400)
     }
 
-    const deleteResult = await callSmarterMail(c, async ({ client, accessToken, user }) => {
-      const userSettings = await client.getUserSettings(accessToken)
-      const userData = userSettings?.userData
-      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
-      }
-      const email = userData.emailAddress || user.email
+    const { id: userId, email } = await requireCurrentUser(c)
+    const ownedFile = and(eq(uploadedFiles.id, id), eq(uploadedFiles.email, email))
+    const [file] = await db
+      .select({
+        fileId: uploadedFiles.fileId,
+        fileName: uploadedFiles.fileName,
+      })
+      .from(uploadedFiles)
+      .where(ownedFile)
+      .limit(1)
 
-      // Check if the file belongs to this user
-      const [file] = await db
-        .select({
-          id: uploadedFiles.id,
-          fileId: uploadedFiles.fileId,
-          fileName: uploadedFiles.fileName,
-        })
-        .from(uploadedFiles)
-        .where(and(eq(uploadedFiles.id, id), eq(uploadedFiles.email, email)))
-        .limit(1)
+    if (!file) {
+      return apiError(c, 'File not found or access denied', 404)
+    }
 
-      if (!file) {
-        throw new HTTPException(404, { message: 'File not found or access denied' })
-      }
+    const { fileId } = file
+    if (!fileId) {
+      return apiError(c, 'Cannot delete workspace file because this file record is missing a file ID', 409)
+    }
 
-      const fileId = file.fileId || ''
-      if (!fileId) {
-        throw new HTTPException(409, { message: 'Cannot delete workspace file because this file record is missing a file ID' })
-      }
-
-      const deleteRes = await client.deleteFiles(accessToken, [fileId])
-      if (!deleteRes.success) {
-        throw new Error(deleteRes.message || 'Failed to delete workspace file')
-      }
-
-      return {
-        id,
-        fileId,
-        fileName: file.fileName ?? undefined,
-      }
-    })
-
+    const deleteResult = await callSmarterMail(userId, ({ client, accessToken }) =>
+      client.deleteFiles(accessToken, [fileId]))
+    if (!deleteResult.success) {
+      throw new Error(deleteResult.message || 'Failed to delete workspace file')
+    }
     // Delete from local DB only after the workspace file has been deleted.
-    await db.delete(uploadedFiles).where(eq(uploadedFiles.id, id))
+    await db.delete(uploadedFiles).where(ownedFile)
 
-    return apiSuccess(c, deleteResult, 'Workspace file deleted successfully')
+    return apiSuccess(c, {
+      id,
+      fileId,
+      fileName: file.fileName ?? undefined,
+    }, 'Workspace file deleted successfully')
   } catch (error) {
     console.error('Delete file error:', error)
     if (error instanceof HTTPException) {
@@ -108,14 +91,8 @@ filesApp.delete('/:id', async (c) => {
 // POST /sync
 filesApp.post('/sync', async (c) => {
   try {
-    const syncResult = await callSmarterMail(c, async ({ client, accessToken, user }) => {
-      const userSettings = await client.getUserSettings(accessToken)
-      const userData = userSettings?.userData
-      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
-      }
-      const email = userData.emailAddress || user.email
-
+    const { id: userId, email } = await requireCurrentUser(c)
+    const syncResult = await callSmarterMail(userId, async ({ client, accessToken, user }) => {
       let syncedCount = 0
 
       // Recursive folder scanning function
@@ -217,7 +194,8 @@ filesApp.post('/sync', async (c) => {
 // POST /cleanup-folders
 filesApp.post('/cleanup-folders', async (c) => {
   try {
-    const result = await callSmarterMail(c, async ({ client, accessToken }) => {
+    const { id: userId } = await requireCurrentUser(c)
+    const result = await callSmarterMail(userId, async ({ client, accessToken }) => {
       return cleanupEmptyDateFolders(client, accessToken)
     })
 

@@ -32,7 +32,7 @@ export interface SmarterMailAuthContext {
 }
 
 export class SmarterMailSessionError extends Error {
-  constructor(message: string, public status = 401) {
+  constructor(message: string) {
     super(message)
     this.name = 'SmarterMailSessionError'
   }

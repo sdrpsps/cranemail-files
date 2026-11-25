@@ -15,9 +15,10 @@ import {
 import nodeCrypto from 'crypto'
 import {
   APP_SESSION_COOKIE,
-  callSmarterMail,
   clearAuthCookies,
   createAppSession,
+  getCurrentUser,
+  requireCurrentUser,
   setAppSessionCookie,
 } from '../_middleware'
 
@@ -90,32 +91,21 @@ authApp.post('/login', async (c) => {
 
 // GET /me
 authApp.get('/me', async (c) => {
+  c.header('Cache-Control', 'no-store')
   try {
-    const result = await callSmarterMail(c, async ({ client, accessToken, user }) => {
-      const userSettings = await client.getUserSettings(accessToken)
-      const userData = userSettings?.userData
-      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-        throw new HTTPException(401, { message: 'Not authenticated' })
-      }
-      return { userData, user }
-    })
-
-    const { userData, user } = result
-    const emailAddress = userData.emailAddress!
-    const username = userData.userName || emailAddress.split('@')[0]
+    const user = await getCurrentUser(c)
+    if (!user) {
+      return apiError(c, 'Not authenticated', 401)
+    }
 
     return apiSuccess(c, {
-      username,
-      emailAddress,
+      username: user.email.split('@')[0],
+      emailAddress: user.email,
       serverUrl: user.serverUrl,
       isTelegramBound: await isUserTelegramBound(user.id),
     }, 'Current user retrieved successfully')
   } catch (err) {
-    console.error('getUserSettings in me failed:', err)
-    if (err instanceof HTTPException && err.status === 401) {
-      clearAuthCookies(c)
-      return apiError(c, 'Not authenticated', 401)
-    }
+    console.error('Current user lookup failed:', err)
     const errorMessage = err instanceof Error ? err.message : 'An error occurred while retrieving current user'
     return apiError(c, errorMessage, 500)
   }
@@ -139,14 +129,7 @@ authApp.post('/telegram/bind-token', async (c) => {
       return apiError(c, 'Password is required to confirm and link your Telegram account', 400)
     }
 
-    const { email, serverUrl, userId } = await callSmarterMail(c, async ({ client, accessToken, user }) => {
-      const userSettings = await client.getUserSettings(accessToken)
-      const userData = userSettings?.userData
-      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
-      }
-      return { email: userData.emailAddress, serverUrl: user.serverUrl, userId: user.id }
-    })
+    const { id: userId, email, serverUrl } = await requireCurrentUser(c)
 
     if (typeof botId !== 'string' || !await hasBotAccess(botId, userId)) {
       return apiError(c, 'Select a bot configured for this account.', 403)

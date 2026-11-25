@@ -138,7 +138,9 @@ Vercel 上不要使用 `local.db` 回退存储。生产和预览环境应使用�
 | `TURSO_AUTH_TOKEN` | 远程数据库需要的访问 token。 |
 | `SMARTERMAIL_CLIENT_ID` | 认证客户端标识，通常保留 `cranemail-files-app` 即可。 |
 
-应用会在服务端加密保存 CraneMail 密码和会话 token，用于续期登录。浏览器使用 HttpOnly 应用会话 cookie。请部署到可信服务器，妥善保管凭据，并同时备份数据库与 `ENCRYPTION_KEY`。更换密钥后，已有加密凭据无法解密，用户需要重新登录，也可能需要重新绑定 Telegram。
+浏览器通过 HttpOnly cookie 使用本地应用会话，会话在登录 30 天后到期。面板从应用数据库读取当前账号和文件列表。登录和绑定 Telegram 时会向 CraneMail 验证凭据。服务端加密保存 CraneMail 凭据，用于上传、同步、删除文件和清理空目录时续期授权。CraneMail 暂时不可用或拒绝文件操作时，本地会话仍然有效。退出登录会撤销当前浏览器的应用会话。
+
+请部署到可信服务器，妥善保管凭据，并同时备份数据库与 `ENCRYPTION_KEY`。更换密钥后，已有加密凭据无法解密。用户需要重新登录以恢复工作区访问，也可能需要重新绑定 Telegram。
 
 ### 启用自己的 Telegram bot
 

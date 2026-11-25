@@ -52,9 +52,9 @@ before(async () => {
     accessTokenExpiration: new Date(Date.now() + 86400000).toISOString(),
     refreshTokenExpiration: new Date(Date.now() + 172800000).toISOString(),
   }))
-  mock.method(SmarterMailClient.prototype, 'getUserSettings', async (token: string) => ({
-    success: true, userData: { emailAddress: token },
-  }))
+  mock.method(SmarterMailClient.prototype, 'getUserSettings', async () => {
+    assert.fail('Telegram binding should use the local user record')
+  })
   mock.method(SmarterMailClient.prototype, 'uploadFile', async (_token: string, _buffer: Buffer, name: string) => ({
     success: true, uploadData: { [name]: { id: `remote-${name}` } },
   }))

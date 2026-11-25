@@ -5,7 +5,7 @@ import { SmarterMailClient } from '@/lib/smartermail'
 import { getPublicUrl } from '@/lib/format'
 import { buildShortUrl, insertFileWithShortCode } from '@/lib/shortlink'
 import nodeCrypto from 'crypto'
-import { callSmarterMail } from '../_middleware'
+import { callSmarterMail, requireCurrentUser } from '../_middleware'
 
 const uploadApp = new Hono()
 
@@ -19,19 +19,12 @@ uploadApp.post('/', async (c) => {
       return apiError(c, 'No file uploaded or invalid file format', 400)
     }
 
+    const { id: userId, email } = await requireCurrentUser(c)
     const fileBuffer = Buffer.from(await file.arrayBuffer())
     const fileName = file.name || `web_upload_${Date.now()}`
 
-    const uploadResult = await callSmarterMail(c, async ({ client, accessToken, user }) => {
+    const uploadResult = await callSmarterMail(userId, async ({ client, accessToken, user }) => {
       const folderPath = SmarterMailClient.getPublicFolder() + SmarterMailClient.getDatePath()
-
-      // Fetch email address of the current user to tag database records
-      const userSettings = await client.getUserSettings(accessToken)
-      const userData = userSettings?.userData
-      if (!userSettings || userSettings.success === false || !userData?.emailAddress) {
-        throw new HTTPException(401, { message: 'Failed to fetch user email context' })
-      }
-      const email = userData.emailAddress || user.email
 
       // 1. Upload to SmarterMail storage
       const uploadRes = await client.uploadFile(accessToken, fileBuffer, fileName, folderPath)
@@ -51,7 +44,6 @@ uploadApp.post('/', async (c) => {
       }
 
       return {
-        email,
         fileId: fileMeta.id,
         publicLink: getPublicUrl(linkResult.publicLink, user.serverUrl),
       }
@@ -62,7 +54,7 @@ uploadApp.post('/', async (c) => {
     const createdAt = new Date().toISOString()
     const shortCode = await insertFileWithShortCode({
       id: fileRecordId,
-      email: uploadResult.email,
+      email,
       fileId: uploadResult.fileId,
       fileName,
       publicLink: uploadResult.publicLink,

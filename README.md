@@ -138,7 +138,9 @@ For upload-size and execution limits, check your [hosting plan's limits](https:/
 | `TURSO_AUTH_TOKEN` | Access token for the remote database, when required. |
 | `SMARTERMAIL_CLIENT_ID` | Authentication client identifier; normally keep `cranemail-files-app`. |
 
-The app stores encrypted CraneMail passwords and session tokens on the server so it can renew sessions. The browser uses an HttpOnly app session cookie. Deploy only on a server you trust, keep credentials private, and back up the database together with `ENCRYPTION_KEY`. Changing that key makes existing encrypted credentials unreadable; users will need to sign in again and may need to relink Telegram.
+The browser holds an HttpOnly cookie for a local app session that expires 30 days after sign-in. The dashboard reads the current account and file list from the app database. Sign-in and Telegram linking verify credentials with CraneMail. The server stores encrypted CraneMail credentials to renew access for workspace operations such as uploading, syncing, deleting files, and cleaning empty folders. If CraneMail is unavailable or rejects a file operation, the local session remains valid. Signing out revokes that browser's app session.
+
+Deploy only on a server you trust, keep credentials private, and back up the database together with `ENCRYPTION_KEY`. Changing that key makes existing encrypted credentials unreadable. Users will need to sign in again to restore workspace access and may need to relink Telegram.
 
 ### Enable your Telegram bot
 

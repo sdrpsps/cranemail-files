@@ -43,16 +43,20 @@ export function useAuthSession() {
 
   const checkSession = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me')
+      const res = await fetch('/api/auth/me', { cache: 'no-store' })
+      if (res.status === 401) {
+        setUser(null)
+        return
+      }
+      if (!res.ok) {
+        throw new Error(`Session check failed (${res.status})`)
+      }
       const data = await res.json()
       if (data.success && data.data) {
         setUser(data.data)
-      } else {
-        setUser(null)
       }
     } catch (err) {
       console.error('Auth verification error:', err)
-      setUser(null)
     } finally {
       setLoading(false)
     }
