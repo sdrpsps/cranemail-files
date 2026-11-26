@@ -118,8 +118,8 @@ PREVIEW_ORIGIN=https://feature-login-cranemail-files.my-team.workers.dev \
 
 1. 运行 `pnpm exec wrangler login`，在 Cloudflare 账号创建 D1 数据库。在 `wrangler.jsonc` 里填写 Worker 名称和 D1 数据库 ID，使用 `DB` 作为 binding 名称。
 2. 在 `wrangler.jsonc` 的 `vars` 里设置正式 HTTPS 地址，再运行 `pnpm bundle`。配置已在 `secrets.required` 中声明两项必需的密钥名。
-3. 运行 `pnpm exec wrangler d1 migrations apply DB --remote`，迁移生产 D1。
-4. 在 Cloudflare 控制台或配置中绑定自定义域名。运行 `pnpm exec wrangler deploy`（或接入 Workers Builds 自动执行 `pnpm bundle` + `npx wrangler deploy`），复用现有的 Worker Secrets。首次部署新 Worker 时，追加 `--secrets-file /path/to/production-secrets.json`，在仓库外的私有 JSON 文件中提供两项密钥的值。验证登录、小文件上传和生成的短链。
+3. 运行 `pnpm db:migrate:remote`（即 `wrangler d1 migrations apply DB --remote`），迁移生产 D1。
+4. 在 Cloudflare 控制台或配置中绑定自定义域名。运行 `pnpm cf:deploy`（会先执行远程 D1 迁移再运行 `wrangler deploy`，在 Workers Builds 中可将构建命令设为 `pnpm bundle`、部署命令设为 `pnpm cf:deploy`），复用现有的 Worker Secrets。首次部署新 Worker 时，可先通过 `pnpm exec wrangler deploy --secrets-file /path/to/production-secrets.json`，在仓库外的私有 JSON 文件中提供两项密钥的值。验证登录、小文件上传和生成的短链。
 
 网页上传由浏览器把文件送到 Worker，Worker 再流式封装为 CraneMail 的 multipart 请求。可上传大小受 [Workers 请求限制](https://developers.cloudflare.com/workers/platform/limits/)和 CraneMail 账号配额影响。
 

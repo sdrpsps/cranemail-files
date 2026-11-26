@@ -118,8 +118,8 @@ Use a test CraneMail account and a separate test bot for write tests, since uplo
 
 1. Run `pnpm exec wrangler login` and create a D1 database in your Cloudflare account. In `wrangler.jsonc`, set your Worker name and D1 database ID, keeping the binding named `DB`.
 2. Set the public HTTPS origin in `wrangler.jsonc` under `vars`, then run `pnpm bundle`. The config lists the two required secret names under `secrets.required`.
-3. Run `pnpm exec wrangler d1 migrations apply DB --remote` to migrate your production D1.
-4. Configure your custom domain in the Cloudflare dashboard or config. Run `pnpm exec wrangler deploy` (or connect Workers Builds to run `pnpm bundle` + `npx wrangler deploy`) to reuse the existing Worker secrets. On the first deploy of a new Worker, add `--secrets-file /path/to/production-secrets.json` and provide both values in that private JSON file outside the repository. Check sign-in, a small upload, and its short link.
+3. Run `pnpm db:migrate:remote` (`wrangler d1 migrations apply DB --remote`) to migrate your production D1.
+4. Configure your custom domain in the Cloudflare dashboard or config. Run `pnpm cf:deploy` (which runs remote D1 migrations followed by `wrangler deploy`; in Workers Builds, set the build command to `pnpm bundle` and the deploy command to `pnpm cf:deploy`) to reuse the existing Worker secrets. On the first deploy of a new Worker, use `pnpm exec wrangler deploy --secrets-file /path/to/production-secrets.json` and provide both values in that private JSON file outside the repository. Check sign-in, a small upload, and its short link.
 
 The browser sends file bytes to the Worker, which streams them into a CraneMail multipart upload. File sizes depend on the [Workers request limits](https://developers.cloudflare.com/workers/platform/limits/) and the CraneMail account's limits.
 
