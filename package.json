@@ -2,6 +2,7 @@
   "name": "cranemail-files",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.17.0",
   "scripts": {
     "build": "next build",
     "bundle": "node scripts/workers/build.mjs",
